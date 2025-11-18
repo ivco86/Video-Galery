@@ -8,6 +8,7 @@ from video_processor import VideoProcessor
 from subtitle_manager import SubtitleManager
 from ai_analyzer import AIAnalyzer
 from rss_manager import RSSManager
+from download_manager import DownloadManager
 from datetime import datetime
 import json
 
@@ -19,6 +20,7 @@ YOUTUBE_API_KEY = os.environ.get('YOUTUBE_API_KEY', '')
 LM_STUDIO_URL = os.environ.get('LM_STUDIO_URL', 'http://localhost:1234')
 VIDEOS_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'videos')
 THUMBNAILS_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'thumbnails')
+DOWNLOADS_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'downloads')
 
 # Initialize components
 db = VideoDatabase('videos.db')
@@ -26,6 +28,7 @@ youtube = YouTubeManager(api_key=YOUTUBE_API_KEY if YOUTUBE_API_KEY else None)
 video_processor = VideoProcessor(videos_folder=VIDEOS_FOLDER)
 ai_analyzer = AIAnalyzer(lm_studio_url=LM_STUDIO_URL)
 rss_manager = RSSManager()
+download_manager = DownloadManager(download_folder=DOWNLOADS_FOLDER, db=db)
 
 # Ensure directories exist
 os.makedirs(VIDEOS_FOLDER, exist_ok=True)
@@ -1113,6 +1116,116 @@ def record_session():
         'success': True,
         'session_id': session_id
     }), 201
+
+
+# ========== DOWNLOAD MANAGER ENDPOINTS ==========
+
+@app.route('/api/downloads', methods=['GET'])
+def get_downloads():
+    """Get all downloads grouped by status"""
+    downloads = download_manager.get_all_downloads()
+    return jsonify(downloads)
+
+
+@app.route('/api/downloads', methods=['POST'])
+def add_download():
+    """Add a video to download queue"""
+    data = request.json
+
+    video_id = data.get('video_id')
+    url = data.get('url')
+    title = data.get('title')
+    quality = data.get('quality', 'best')
+
+    if not video_id or not url:
+        return jsonify({'error': 'video_id and url are required'}), 400
+
+    download_id = download_manager.add_to_queue(video_id, url, title, quality)
+
+    # Optionally start download immediately
+    if data.get('start_immediately', True):
+        download_manager.start_download(download_id)
+
+    return jsonify({
+        'success': True,
+        'download_id': download_id
+    }), 201
+
+
+@app.route('/api/downloads/<int:download_id>', methods=['GET'])
+def get_download(download_id):
+    """Get download details"""
+    download = db.get_download(download_id)
+
+    if not download:
+        return jsonify({'error': 'Download not found'}), 404
+
+    # Add real-time info if downloading
+    if download['status'] == 'downloading':
+        real_time_info = download_manager.get_active_download_info(download_id)
+        if real_time_info:
+            download['real_time_info'] = real_time_info
+
+    return jsonify({'download': download})
+
+
+@app.route('/api/downloads/<int:download_id>/start', methods=['POST'])
+def start_download(download_id):
+    """Start a pending download"""
+    success = download_manager.start_download(download_id)
+
+    if not success:
+        return jsonify({'error': 'Could not start download'}), 400
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/downloads/<int:download_id>/cancel', methods=['POST'])
+def cancel_download(download_id):
+    """Cancel an active download"""
+    success = download_manager.cancel_download(download_id)
+
+    if not success:
+        return jsonify({'error': 'Download not active'}), 400
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/downloads/<int:download_id>', methods=['DELETE'])
+def delete_download(download_id):
+    """Delete a download"""
+    delete_file = request.args.get('delete_file', 'false').lower() == 'true'
+    success = download_manager.delete_download(download_id, delete_file)
+
+    if not success:
+        return jsonify({'error': 'Download not found'}), 404
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/downloads/process-queue', methods=['POST'])
+def process_download_queue():
+    """Process pending downloads with concurrency limit"""
+    max_concurrent = request.json.get('max_concurrent', 2) if request.json else 2
+    download_manager.process_queue(max_concurrent)
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/downloads/<int:download_id>/stream', methods=['GET'])
+def stream_downloaded_video(download_id):
+    """Stream a downloaded video"""
+    download = db.get_download(download_id)
+
+    if not download or download['status'] != 'completed':
+        return jsonify({'error': 'Download not completed'}), 404
+
+    file_path = download.get('file_path')
+
+    if not file_path or not os.path.exists(file_path):
+        return jsonify({'error': 'File not found'}), 404
+
+    return send_file(file_path, mimetype='video/mp4')
 
 
 # ========== ERROR HANDLERS ==========

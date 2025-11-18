@@ -196,6 +196,26 @@ class VideoDatabase:
             )
         ''')
 
+        # Downloads table for tracking video downloads
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS downloads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                video_id TEXT NOT NULL,
+                url TEXT NOT NULL,
+                title TEXT,
+                status TEXT DEFAULT 'pending',
+                progress INTEGER DEFAULT 0,
+                file_path TEXT,
+                file_size INTEGER,
+                quality TEXT DEFAULT 'best',
+                added_date TEXT,
+                started_date TEXT,
+                completed_date TEXT,
+                error_message TEXT,
+                FOREIGN KEY (video_id) REFERENCES videos(video_id) ON DELETE CASCADE
+            )
+        ''')
+
         conn.commit()
         conn.close()
 
@@ -1468,3 +1488,105 @@ class VideoDatabase:
         conn.close()
 
         return stats
+
+    # Download operations
+    def add_download(self, download_data: Dict[str, Any]) -> int:
+        """Add a new download to the queue"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        download_data['added_date'] = datetime.now().isoformat()
+        download_data['status'] = 'pending'
+
+        cursor.execute('''
+            INSERT INTO downloads (
+                video_id, url, title, quality, status, added_date
+            ) VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            download_data.get('video_id'),
+            download_data.get('url'),
+            download_data.get('title'),
+            download_data.get('quality', 'best'),
+            download_data.get('status'),
+            download_data.get('added_date')
+        ))
+
+        conn.commit()
+        download_id = cursor.lastrowid
+        conn.close()
+
+        return download_id
+
+    def get_downloads(self, status: Optional[str] = None) -> List[Dict]:
+        """Get all downloads, optionally filtered by status"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        if status:
+            cursor.execute('''
+                SELECT * FROM downloads
+                WHERE status = ?
+                ORDER BY added_date DESC
+            ''', (status,))
+        else:
+            cursor.execute('''
+                SELECT * FROM downloads
+                ORDER BY added_date DESC
+            ''')
+
+        downloads = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return downloads
+
+    def get_download(self, download_id: int) -> Optional[Dict]:
+        """Get a single download by ID"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT * FROM downloads WHERE id = ?', (download_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        return dict(row) if row else None
+
+    def update_download(self, download_id: int, updates: Dict[str, Any]) -> bool:
+        """Update download information"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        set_clause = ', '.join([f'{key} = ?' for key in updates.keys()])
+        values = list(updates.values()) + [download_id]
+
+        cursor.execute(f'UPDATE downloads SET {set_clause} WHERE id = ?', values)
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+
+        return affected > 0
+
+    def delete_download(self, download_id: int) -> bool:
+        """Delete a download"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM downloads WHERE id = ?', (download_id,))
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+
+        return affected > 0
+
+    def get_pending_downloads(self) -> List[Dict]:
+        """Get all pending downloads"""
+        return self.get_downloads(status='pending')
+
+    def get_active_downloads(self) -> List[Dict]:
+        """Get all active (downloading) downloads"""
+        return self.get_downloads(status='downloading')
+
+    def get_completed_downloads(self) -> List[Dict]:
+        """Get all completed downloads"""
+        return self.get_downloads(status='completed')
