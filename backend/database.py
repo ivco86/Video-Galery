@@ -216,6 +216,21 @@ class VideoDatabase:
             )
         ''')
 
+        # Smart Collections table with dynamic rules
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS smart_collections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT,
+                rules TEXT NOT NULL,
+                auto_update BOOLEAN DEFAULT 1,
+                created_date TEXT,
+                updated_date TEXT,
+                color TEXT,
+                icon TEXT
+            )
+        ''')
+
         conn.commit()
         conn.close()
 
@@ -1590,3 +1605,307 @@ class VideoDatabase:
     def get_completed_downloads(self) -> List[Dict]:
         """Get all completed downloads"""
         return self.get_downloads(status='completed')
+
+    # Smart Tags and Collections operations
+    def get_all_tags(self) -> List[str]:
+        """Get all unique tags from all videos"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT tags, ai_tags FROM videos WHERE tags IS NOT NULL OR ai_tags IS NOT NULL')
+        rows = cursor.fetchall()
+        conn.close()
+
+        tags_set = set()
+
+        for row in rows:
+            # Parse manual tags
+            if row[0]:
+                try:
+                    tags = json.loads(row[0])
+                    if isinstance(tags, list):
+                        tags_set.update(tags)
+                except:
+                    pass
+
+            # Parse AI tags
+            if row[1]:
+                try:
+                    ai_tags = json.loads(row[1])
+                    if isinstance(ai_tags, list):
+                        tags_set.update(ai_tags)
+                except:
+                    pass
+
+        return sorted(list(tags_set))
+
+    def get_tag_stats(self) -> List[Dict]:
+        """Get statistics for all tags (count of videos per tag)"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT video_id, tags, ai_tags FROM videos')
+        rows = cursor.fetchall()
+        conn.close()
+
+        tag_counts = {}
+
+        for row in rows:
+            video_id, tags_json, ai_tags_json = row
+
+            # Count manual tags
+            if tags_json:
+                try:
+                    tags = json.loads(tags_json)
+                    if isinstance(tags, list):
+                        for tag in tags:
+                            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+                except:
+                    pass
+
+            # Count AI tags
+            if ai_tags_json:
+                try:
+                    ai_tags = json.loads(ai_tags_json)
+                    if isinstance(ai_tags, list):
+                        for tag in ai_tags:
+                            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+                except:
+                    pass
+
+        # Convert to list of dicts
+        result = [{'tag': tag, 'count': count} for tag, count in tag_counts.items()]
+        result.sort(key=lambda x: x['count'], reverse=True)
+
+        return result
+
+    def auto_generate_tags(self, video_id: str) -> List[str]:
+        """Auto-generate tags for a video based on AI analysis, title, description"""
+        video = self.get_video(video_id)
+
+        if not video:
+            return []
+
+        tags = set()
+
+        # Add existing AI tags
+        if video.get('ai_tags'):
+            try:
+                ai_tags = json.loads(video['ai_tags']) if isinstance(video['ai_tags'], str) else video['ai_tags']
+                if isinstance(ai_tags, list):
+                    tags.update(ai_tags)
+            except:
+                pass
+
+        # Extract keywords from title (words longer than 3 chars, exclude common words)
+        common_words = {'the', 'and', 'for', 'with', 'this', 'that', 'from', 'have', 'been', 'what', 'when', 'where', 'how', 'why'}
+        if video.get('title'):
+            words = video['title'].lower().split()
+            for word in words:
+                clean_word = ''.join(c for c in word if c.isalnum())
+                if len(clean_word) > 3 and clean_word not in common_words:
+                    tags.add(clean_word)
+
+        # Add channel as tag
+        if video.get('channel_name'):
+            tags.add(video['channel_name'])
+
+        # Add source as tag
+        if video.get('source'):
+            tags.add(video['source'])
+
+        return list(tags)[:15]  # Limit to 15 tags
+
+    # Smart Collections operations
+    def create_smart_collection(self, collection_data: Dict[str, Any]) -> int:
+        """Create a new smart collection with rules"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        now = datetime.now().isoformat()
+
+        cursor.execute('''
+            INSERT INTO smart_collections (
+                name, description, rules, auto_update, created_date, updated_date, color, icon
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            collection_data.get('name'),
+            collection_data.get('description'),
+            json.dumps(collection_data.get('rules', {})),
+            collection_data.get('auto_update', True),
+            now,
+            now,
+            collection_data.get('color'),
+            collection_data.get('icon')
+        ))
+
+        conn.commit()
+        collection_id = cursor.lastrowid
+        conn.close()
+
+        return collection_id
+
+    def get_smart_collections(self) -> List[Dict]:
+        """Get all smart collections"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT * FROM smart_collections ORDER BY created_date DESC')
+        collections = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        # Parse rules JSON
+        for collection in collections:
+            if collection.get('rules'):
+                try:
+                    collection['rules'] = json.loads(collection['rules'])
+                except:
+                    collection['rules'] = {}
+
+        return collections
+
+    def get_smart_collection(self, collection_id: int) -> Optional[Dict]:
+        """Get a single smart collection"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT * FROM smart_collections WHERE id = ?', (collection_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return None
+
+        collection = dict(row)
+
+        # Parse rules JSON
+        if collection.get('rules'):
+            try:
+                collection['rules'] = json.loads(collection['rules'])
+            except:
+                collection['rules'] = {}
+
+        return collection
+
+    def update_smart_collection(self, collection_id: int, updates: Dict[str, Any]) -> bool:
+        """Update a smart collection"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        updates['updated_date'] = datetime.now().isoformat()
+
+        # Convert rules to JSON if present
+        if 'rules' in updates:
+            updates['rules'] = json.dumps(updates['rules'])
+
+        set_clause = ', '.join([f'{key} = ?' for key in updates.keys()])
+        values = list(updates.values()) + [collection_id]
+
+        cursor.execute(f'UPDATE smart_collections SET {set_clause} WHERE id = ?', values)
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+
+        return affected > 0
+
+    def delete_smart_collection(self, collection_id: int) -> bool:
+        """Delete a smart collection"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM smart_collections WHERE id = ?', (collection_id,))
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+
+        return affected > 0
+
+    def get_videos_by_smart_collection(self, collection_id: int) -> List[Dict]:
+        """Get videos matching a smart collection's rules"""
+        collection = self.get_smart_collection(collection_id)
+
+        if not collection:
+            return []
+
+        rules = collection.get('rules', {})
+        return self.evaluate_collection_rules(rules)
+
+    def evaluate_collection_rules(self, rules: Dict[str, Any]) -> List[Dict]:
+        """Evaluate collection rules and return matching videos"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Build WHERE clauses based on rules
+        where_clauses = []
+        params = []
+
+        # Filter by tags
+        if rules.get('tags'):
+            tags = rules['tags']
+            if isinstance(tags, list) and len(tags) > 0:
+                # Videos must have at least one of the specified tags
+                tag_conditions = []
+                for tag in tags:
+                    tag_conditions.append("(tags LIKE ? OR ai_tags LIKE ?)")
+                    params.append(f'%"{tag}"%')
+                    params.append(f'%"{tag}"%')
+                where_clauses.append(f"({' OR '.join(tag_conditions)})")
+
+        # Filter by channel
+        if rules.get('channel'):
+            where_clauses.append("channel_name = ?")
+            params.append(rules['channel'])
+
+        # Filter by source
+        if rules.get('source'):
+            where_clauses.append("source = ?")
+            params.append(rules['source'])
+
+        # Filter by duration
+        if rules.get('min_duration'):
+            where_clauses.append("duration >= ?")
+            params.append(rules['min_duration'])
+
+        if rules.get('max_duration'):
+            where_clauses.append("duration <= ?")
+            params.append(rules['max_duration'])
+
+        # Filter by favorites
+        if rules.get('is_favorite') is not None:
+            where_clauses.append("is_favorite = ?")
+            params.append(1 if rules['is_favorite'] else 0)
+
+        # Filter by date range
+        if rules.get('added_after'):
+            where_clauses.append("added_date >= ?")
+            params.append(rules['added_after'])
+
+        if rules.get('added_before'):
+            where_clauses.append("added_date <= ?")
+            params.append(rules['added_before'])
+
+        # Build final query
+        where_clause = ' AND '.join(where_clauses) if where_clauses else '1=1'
+        query = f'SELECT * FROM videos WHERE {where_clause} ORDER BY added_date DESC'
+
+        cursor.execute(query, params)
+        videos = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        # Parse JSON fields
+        for video in videos:
+            if video.get('tags'):
+                try:
+                    video['tags'] = json.loads(video['tags'])
+                except:
+                    video['tags'] = []
+            if video.get('ai_tags'):
+                try:
+                    video['ai_tags'] = json.loads(video['ai_tags'])
+                except:
+                    video['ai_tags'] = []
+
+        return videos

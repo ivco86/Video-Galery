@@ -1228,6 +1228,155 @@ def stream_downloaded_video(download_id):
     return send_file(file_path, mimetype='video/mp4')
 
 
+# ========== SMART TAGS ENDPOINTS ==========
+
+@app.route('/api/tags', methods=['GET'])
+def get_all_tags():
+    """Get all unique tags"""
+    tags = db.get_all_tags()
+    return jsonify({'tags': tags})
+
+
+@app.route('/api/tags/stats', methods=['GET'])
+def get_tag_statistics():
+    """Get tag statistics (counts)"""
+    stats = db.get_tag_stats()
+    return jsonify({'stats': stats})
+
+
+@app.route('/api/videos/<video_id>/auto-tag', methods=['POST'])
+def auto_tag_video(video_id):
+    """Auto-generate tags for a video"""
+    video = db.get_video(video_id)
+
+    if not video:
+        return jsonify({'error': 'Video not found'}), 404
+
+    suggested_tags = db.auto_generate_tags(video_id)
+
+    # Merge with existing tags
+    existing_tags = []
+    if video.get('tags'):
+        try:
+            existing_tags = json.loads(video['tags']) if isinstance(video['tags'], str) else video['tags']
+        except:
+            pass
+
+    # Combine and remove duplicates
+    all_tags = list(set(existing_tags + suggested_tags))
+
+    # Update video with new tags
+    db.update_video(video_id, {'tags': json.dumps(all_tags)})
+
+    return jsonify({
+        'success': True,
+        'tags': all_tags,
+        'new_tags': suggested_tags
+    })
+
+
+# ========== SMART COLLECTIONS ENDPOINTS ==========
+
+@app.route('/api/smart-collections', methods=['GET'])
+def get_smart_collections():
+    """Get all smart collections"""
+    collections = db.get_smart_collections()
+    return jsonify({'collections': collections})
+
+
+@app.route('/api/smart-collections', methods=['POST'])
+def create_smart_collection():
+    """Create a new smart collection"""
+    data = request.json
+
+    if not data.get('name') or not data.get('rules'):
+        return jsonify({'error': 'Name and rules are required'}), 400
+
+    collection_id = db.create_smart_collection(data)
+    collection = db.get_smart_collection(collection_id)
+
+    return jsonify({
+        'success': True,
+        'collection': collection
+    }), 201
+
+
+@app.route('/api/smart-collections/<int:collection_id>', methods=['GET'])
+def get_smart_collection(collection_id):
+    """Get a specific smart collection"""
+    collection = db.get_smart_collection(collection_id)
+
+    if not collection:
+        return jsonify({'error': 'Collection not found'}), 404
+
+    return jsonify({'collection': collection})
+
+
+@app.route('/api/smart-collections/<int:collection_id>', methods=['PUT'])
+def update_smart_collection(collection_id):
+    """Update a smart collection"""
+    collection = db.get_smart_collection(collection_id)
+
+    if not collection:
+        return jsonify({'error': 'Collection not found'}), 404
+
+    data = request.json
+    updates = {}
+
+    if 'name' in data:
+        updates['name'] = data['name']
+    if 'description' in data:
+        updates['description'] = data['description']
+    if 'rules' in data:
+        updates['rules'] = data['rules']
+    if 'auto_update' in data:
+        updates['auto_update'] = data['auto_update']
+    if 'color' in data:
+        updates['color'] = data['color']
+    if 'icon' in data:
+        updates['icon'] = data['icon']
+
+    if updates:
+        db.update_smart_collection(collection_id, updates)
+
+    updated_collection = db.get_smart_collection(collection_id)
+
+    return jsonify({
+        'success': True,
+        'collection': updated_collection
+    })
+
+
+@app.route('/api/smart-collections/<int:collection_id>', methods=['DELETE'])
+def delete_smart_collection(collection_id):
+    """Delete a smart collection"""
+    collection = db.get_smart_collection(collection_id)
+
+    if not collection:
+        return jsonify({'error': 'Collection not found'}), 404
+
+    db.delete_smart_collection(collection_id)
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/smart-collections/<int:collection_id>/videos', methods=['GET'])
+def get_smart_collection_videos(collection_id):
+    """Get videos in a smart collection"""
+    collection = db.get_smart_collection(collection_id)
+
+    if not collection:
+        return jsonify({'error': 'Collection not found'}), 404
+
+    videos = db.get_videos_by_smart_collection(collection_id)
+
+    return jsonify({
+        'collection': collection,
+        'videos': videos,
+        'count': len(videos)
+    })
+
+
 # ========== ERROR HANDLERS ==========
 
 @app.errorhandler(404)
