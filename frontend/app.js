@@ -38,6 +38,11 @@ class VideoGallery {
         // RSS Feed state
         this.rssFeeds = [];
 
+        // Notes state
+        this.currentNotes = [];
+        this.editingNote = null;
+        this.currentNoteFilter = 'all';
+
         this.init();
     }
 
@@ -203,6 +208,48 @@ class VideoGallery {
                 this.selectedBookmarkColor = e.target.dataset.color;
             });
         });
+
+        // Notes
+        const addNoteBtn = document.getElementById('addNoteBtn');
+        if (addNoteBtn) {
+            addNoteBtn.addEventListener('click', () => this.openNoteEditor());
+        }
+
+        const saveNoteBtn = document.getElementById('saveNoteBtn');
+        if (saveNoteBtn) {
+            saveNoteBtn.addEventListener('click', () => this.saveNote());
+        }
+
+        const cancelNoteBtn = document.getElementById('cancelNoteBtn');
+        if (cancelNoteBtn) {
+            cancelNoteBtn.addEventListener('click', () => this.closeNoteEditor());
+        }
+
+        const previewNoteBtn = document.getElementById('previewNoteBtn');
+        if (previewNoteBtn) {
+            previewNoteBtn.addEventListener('click', () => this.toggleNotePreview());
+        }
+
+        const linkTimestampBtn = document.getElementById('linkTimestampBtn');
+        if (linkTimestampBtn) {
+            linkTimestampBtn.addEventListener('click', () => this.linkCurrentTimestamp());
+        }
+
+        // Note filters
+        document.querySelectorAll('.note-filter').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.note-filter').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                this.currentNoteFilter = e.target.dataset.category;
+                this.filterNotes();
+            });
+        });
+
+        // Note search
+        const noteSearchInput = document.getElementById('noteSearchInput');
+        if (noteSearchInput) {
+            noteSearchInput.addEventListener('input', (e) => this.searchNotes(e.target.value));
+        }
 
         // Player controls
         const playerPlayPauseBtn = document.getElementById('playerPlayPauseBtn');
@@ -475,6 +522,9 @@ class VideoGallery {
 
         // Load bookmarks
         await this.loadBookmarks(video.video_id);
+
+        // Load notes
+        await this.loadNotes(video.video_id);
 
         // Load recommendations
         await this.loadRecommendations(video.video_id);
@@ -1413,6 +1463,281 @@ class VideoGallery {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // ========== NOTES METHODS ==========
+
+    async loadNotes(videoId) {
+        try {
+            const response = await this.apiCall(`/videos/${videoId}/notes`);
+            this.currentNotes = response.notes || [];
+            this.renderNotes();
+        } catch (error) {
+            console.error('Error loading notes:', error);
+            this.currentNotes = [];
+        }
+    }
+
+    renderNotes() {
+        const container = document.getElementById('notesList');
+
+        const filteredNotes = this.currentNoteFilter === 'all'
+            ? this.currentNotes
+            : this.currentNotes.filter(note => note.category === this.currentNoteFilter);
+
+        if (!filteredNotes || filteredNotes.length === 0) {
+            container.innerHTML = '<p class="empty-message">Няма бележки</p>';
+            return;
+        }
+
+        container.innerHTML = '';
+
+        filteredNotes.forEach(note => {
+            const item = document.createElement('div');
+            item.className = 'note-item';
+            item.dataset.category = note.category;
+
+            const categoryLabels = {
+                'general': '📝 Обща',
+                'summary': '📋 Резюме',
+                'question': '❓ Въпрос',
+                'important': '⚠️ Важно',
+                'idea': '💡 Идея',
+                'timestamp': '🕐 Времеви'
+            };
+
+            const timestampHtml = note.timestamp
+                ? `<span class="note-timestamp" onclick="app.jumpToTimestamp(${note.timestamp})">🕐 ${this.formatDuration(note.timestamp)}</span>`
+                : '';
+
+            item.innerHTML = `
+                <div class="note-header">
+                    <span class="note-category" style="background: ${note.color}">${categoryLabels[note.category] || note.category}</span>
+                    ${timestampHtml}
+                    <span class="note-date">${new Date(note.created_date).toLocaleDateString('bg-BG')}</span>
+                </div>
+                <div class="note-content-display">${this.renderMarkdown(note.content)}</div>
+                <div class="note-actions">
+                    <button class="btn-icon-small" onclick="app.editNote(${note.id})" title="Редактирай">✏️</button>
+                    <button class="btn-icon-small" onclick="app.deleteNote(${note.id})" title="Изтрий">🗑️</button>
+                </div>
+            `;
+            container.appendChild(item);
+        });
+    }
+
+    openNoteEditor(noteId = null) {
+        const editor = document.getElementById('noteEditor');
+        const categorySelect = document.getElementById('noteCategorySelect');
+        const contentTextarea = document.getElementById('noteContent');
+        const preview = document.getElementById('notePreview');
+
+        if (noteId) {
+            // Edit mode
+            const note = this.currentNotes.find(n => n.id === noteId);
+            if (!note) return;
+
+            this.editingNote = note;
+            categorySelect.value = note.category;
+            contentTextarea.value = note.content;
+        } else {
+            // Add mode
+            this.editingNote = null;
+            categorySelect.value = 'general';
+            contentTextarea.value = '';
+        }
+
+        preview.style.display = 'none';
+        editor.style.display = 'block';
+        contentTextarea.focus();
+    }
+
+    closeNoteEditor() {
+        const editor = document.getElementById('noteEditor');
+        const contentTextarea = document.getElementById('noteContent');
+        const preview = document.getElementById('notePreview');
+
+        editor.style.display = 'none';
+        contentTextarea.value = '';
+        preview.style.display = 'none';
+        this.editingNote = null;
+    }
+
+    toggleNotePreview() {
+        const contentTextarea = document.getElementById('noteContent');
+        const preview = document.getElementById('notePreview');
+        const previewBtn = document.getElementById('previewNoteBtn');
+
+        if (preview.style.display === 'none') {
+            // Show preview
+            preview.innerHTML = this.renderMarkdown(contentTextarea.value);
+            preview.style.display = 'block';
+            contentTextarea.style.display = 'none';
+            previewBtn.textContent = '✏️ Редактирай';
+        } else {
+            // Show editor
+            preview.style.display = 'none';
+            contentTextarea.style.display = 'block';
+            previewBtn.textContent = '👁️ Преглед';
+        }
+    }
+
+    linkCurrentTimestamp() {
+        const videoPlayer = document.getElementById('videoPlayer');
+        const categorySelect = document.getElementById('noteCategorySelect');
+        const contentTextarea = document.getElementById('noteContent');
+
+        if (videoPlayer && !videoPlayer.paused) {
+            const timestamp = Math.floor(videoPlayer.currentTime);
+            const timeStr = this.formatDuration(timestamp);
+
+            categorySelect.value = 'timestamp';
+
+            // Add timestamp to note content if not editing
+            if (!this.editingNote) {
+                const currentContent = contentTextarea.value;
+                const prefix = currentContent ? '\n\n' : '';
+                contentTextarea.value = currentContent + prefix + `⏱️ ${timeStr}\n\n`;
+            }
+        }
+    }
+
+    async saveNote() {
+        const categorySelect = document.getElementById('noteCategorySelect');
+        const contentTextarea = document.getElementById('noteContent');
+        const videoPlayer = document.getElementById('videoPlayer');
+
+        const content = contentTextarea.value.trim();
+
+        if (!content) {
+            this.showToast('Моля въведете съдържание на бележката', 'error');
+            return;
+        }
+
+        // Determine timestamp based on category
+        let timestamp = null;
+        if (categorySelect.value === 'timestamp' && videoPlayer && !videoPlayer.paused) {
+            timestamp = Math.floor(videoPlayer.currentTime);
+        }
+
+        const noteData = {
+            content,
+            category: categorySelect.value,
+            timestamp: timestamp
+        };
+
+        try {
+            if (this.editingNote) {
+                // Update existing note
+                await this.apiCall(`/notes/${this.editingNote.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(noteData)
+                });
+                this.showToast('Бележка актуализирана', 'success');
+            } else {
+                // Create new note
+                await this.apiCall(`/videos/${this.currentVideo.video_id}/notes`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(noteData)
+                });
+                this.showToast('Бележка добавена', 'success');
+            }
+
+            await this.loadNotes(this.currentVideo.video_id);
+            this.closeNoteEditor();
+        } catch (error) {
+            console.error('Error saving note:', error);
+            this.showToast('Грешка при запазване на бележката', 'error');
+        }
+    }
+
+    async deleteNote(noteId) {
+        if (!confirm('Сигурни ли сте, че искате да изтриете тази бележка?')) {
+            return;
+        }
+
+        try {
+            await this.apiCall(`/notes/${noteId}`, { method: 'DELETE' });
+            this.showToast('Бележка изтрита', 'success');
+            await this.loadNotes(this.currentVideo.video_id);
+        } catch (error) {
+            console.error('Error deleting note:', error);
+            this.showToast('Грешка при изтриване на бележката', 'error');
+        }
+    }
+
+    editNote(noteId) {
+        this.openNoteEditor(noteId);
+    }
+
+    filterNotes() {
+        this.renderNotes();
+    }
+
+    async searchNotes(query) {
+        if (!query.trim()) {
+            this.renderNotes();
+            return;
+        }
+
+        try {
+            const response = await this.apiCall(`/notes/search?q=${encodeURIComponent(query)}&video_id=${this.currentVideo.video_id}`);
+            this.currentNotes = response.notes || [];
+            this.renderNotes();
+        } catch (error) {
+            console.error('Error searching notes:', error);
+        }
+    }
+
+    jumpToTimestamp(timestamp) {
+        const videoPlayer = document.getElementById('videoPlayer');
+        const youtubeIframe = document.getElementById('youtubeIframe');
+
+        if (this.currentVideo.source === 'youtube') {
+            const videoId = this.currentVideo.video_id;
+            youtubeIframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&start=${timestamp}`;
+        } else {
+            videoPlayer.currentTime = timestamp;
+            videoPlayer.play();
+        }
+    }
+
+    renderMarkdown(text) {
+        if (!text) return '';
+
+        // Simple markdown rendering
+        let html = this.escapeHtml(text);
+
+        // Headers
+        html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+        html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+        html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+        // Bold
+        html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
+
+        // Italic
+        html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+        html = html.replace(/_(.+?)_/g, '<em>$1</em>');
+
+        // Code
+        html = html.replace(/`(.+?)`/g, '<code>$1</code>');
+
+        // Links
+        html = html.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank">$1</a>');
+
+        // Lists
+        html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+        html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+
+        // Line breaks
+        html = html.replace(/\n\n/g, '</p><p>');
+        html = '<p>' + html + '</p>';
+
+        return html;
     }
 
     // ========== PLAYER CONTROL METHODS ==========

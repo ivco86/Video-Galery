@@ -282,6 +282,62 @@
                     </div>
                 </div>
 
+                <div class="video-notes">
+                    <div class="section-header">
+                        <h3>Бележки 📝</h3>
+                        <button id="addNoteBtn" class="btn btn-icon">➕ Нова бележка</button>
+                    </div>
+
+                    <!-- Note Editor -->
+                    <div id="noteEditor" class="note-editor" style="display: none;">
+                        <div class="note-editor-header">
+                            <select id="noteCategorySelect" class="note-category-select">
+                                <option value="general">Обща бележка</option>
+                                <option value="summary">Резюме</option>
+                                <option value="question">Въпрос</option>
+                                <option value="important">Важно</option>
+                                <option value="idea">Идея</option>
+                                <option value="timestamp">Времеви маркер</option>
+                            </select>
+                            <button id="linkTimestampBtn" class="btn btn-small">🕐 Време</button>
+                        </div>
+                        <textarea id="noteContent" class="note-content" placeholder="Напиши бележка (поддържа Markdown)..."></textarea>
+                        <div class="note-preview" id="notePreview" style="display: none;"></div>
+                        <div class="note-editor-actions">
+                            <button id="saveNoteBtn" class="btn btn-primary">💾 Запази</button>
+                            <button id="previewNoteBtn" class="btn">👁️ Преглед</button>
+                            <button id="cancelNoteBtn" class="btn">❌ Откажи</button>
+                        </div>
+                        <div class="note-editor-help">
+                            <small>
+                                <strong>Markdown поддръжка:</strong> **bold**, *italic*, `code`,
+                                [link](url), # Заглавие, - Списък
+                            </small>
+                        </div>
+                    </div>
+
+                    <!-- Note Filters -->
+                    <div class="note-filters">
+                        <button class="note-filter active" data-category="all">Всички</button>
+                        <button class="note-filter" data-category="general">Общи</button>
+                        <button class="note-filter" data-category="summary">Резюмета</button>
+                        <button class="note-filter" data-category="question">Въпроси</button>
+                        <button class="note-filter" data-category="important">Важни</button>
+                        <button class="note-filter" data-category="idea">Идеи</button>
+                        <button class="note-filter" data-category="timestamp">Времеви</button>
+                    </div>
+
+                    <!-- Notes Search -->
+                    <div class="note-search-container">
+                        <input type="text" id="noteSearchInput" class="note-search" placeholder="Търси в бележките...">
+                    </div>
+
+                    <!-- Notes List -->
+                    <div id="notesList" class="notes-list">
+                        <!-- Notes will be loaded here -->
+                    </div>
+                </div>
+
                 <div class="video-recommendations">
                     <h3>Свързани видеа 🎬</h3>
                     <div id="recommendationsList" class="recommendations-list">

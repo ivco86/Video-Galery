@@ -166,6 +166,21 @@ class VideoDatabase:
             )
         ''')
 
+        # Video Notes table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS video_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                video_id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                category TEXT DEFAULT 'general',
+                timestamp INTEGER,
+                created_date TEXT,
+                updated_date TEXT,
+                color TEXT DEFAULT '#10B981',
+                FOREIGN KEY (video_id) REFERENCES videos(video_id) ON DELETE CASCADE
+            )
+        ''')
+
         conn.commit()
         conn.close()
 
@@ -1096,3 +1111,145 @@ class VideoDatabase:
 
         conn.commit()
         conn.close()
+
+    # Video Notes operations
+    def add_note(self, note_data: Dict[str, Any]) -> int:
+        """Add a note to a video"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        now = datetime.now().isoformat()
+        note_data['created_date'] = now
+        note_data['updated_date'] = now
+
+        cursor.execute('''
+            INSERT INTO video_notes (
+                video_id, content, category, timestamp, created_date, updated_date, color
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            note_data.get('video_id'),
+            note_data.get('content'),
+            note_data.get('category', 'general'),
+            note_data.get('timestamp'),
+            note_data.get('created_date'),
+            note_data.get('updated_date'),
+            note_data.get('color', '#10B981')
+        ))
+
+        conn.commit()
+        note_id = cursor.lastrowid
+        conn.close()
+
+        return note_id
+
+    def get_notes(self, video_id: str, category: Optional[str] = None) -> List[Dict]:
+        """Get all notes for a video, optionally filtered by category"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        if category:
+            cursor.execute('''
+                SELECT * FROM video_notes
+                WHERE video_id = ? AND category = ?
+                ORDER BY timestamp ASC, created_date ASC
+            ''', (video_id, category))
+        else:
+            cursor.execute('''
+                SELECT * FROM video_notes
+                WHERE video_id = ?
+                ORDER BY timestamp ASC, created_date ASC
+            ''', (video_id,))
+
+        notes = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return notes
+
+    def get_note(self, note_id: int) -> Optional[Dict]:
+        """Get a single note by ID"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT * FROM video_notes WHERE id = ?', (note_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        return dict(row) if row else None
+
+    def update_note(self, note_id: int, updates: Dict[str, Any]) -> bool:
+        """Update note information"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        updates['updated_date'] = datetime.now().isoformat()
+
+        set_clause = ', '.join([f'{key} = ?' for key in updates.keys()])
+        values = list(updates.values()) + [note_id]
+
+        cursor.execute(f'UPDATE video_notes SET {set_clause} WHERE id = ?', values)
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+
+        return affected > 0
+
+    def delete_note(self, note_id: int) -> bool:
+        """Delete a note"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM video_notes WHERE id = ?', (note_id,))
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+
+        return affected > 0
+
+    def search_notes(self, query: str, video_id: Optional[str] = None) -> List[Dict]:
+        """Search notes by content"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        search_term = f'%{query}%'
+
+        if video_id:
+            cursor.execute('''
+                SELECT * FROM video_notes
+                WHERE video_id = ? AND content LIKE ?
+                ORDER BY created_date DESC
+            ''', (video_id, search_term))
+        else:
+            cursor.execute('''
+                SELECT vn.*, v.title as video_title
+                FROM video_notes vn
+                JOIN videos v ON vn.video_id = v.video_id
+                WHERE vn.content LIKE ?
+                ORDER BY vn.created_date DESC
+            ''', (search_term,))
+
+        notes = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return notes
+
+    def get_all_notes_for_all_videos(self, limit: int = 100) -> List[Dict]:
+        """Get recent notes across all videos"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT vn.*, v.title as video_title, v.thumbnail_url
+            FROM video_notes vn
+            JOIN videos v ON vn.video_id = v.video_id
+            ORDER BY vn.created_date DESC
+            LIMIT ?
+        ''', (limit,))
+
+        notes = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return notes

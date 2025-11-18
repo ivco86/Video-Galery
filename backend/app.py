@@ -936,6 +936,115 @@ def sync_all_rss_feeds():
     })
 
 
+# ========== VIDEO NOTES ENDPOINTS ==========
+
+@app.route('/api/videos/<video_id>/notes', methods=['GET'])
+def get_video_notes(video_id):
+    """Get all notes for a video"""
+    category = request.args.get('category')
+    notes = db.get_notes(video_id, category)
+    return jsonify({'notes': notes})
+
+
+@app.route('/api/videos/<video_id>/notes', methods=['POST'])
+def add_video_note(video_id):
+    """Add a note to a video"""
+    data = request.json
+
+    note_data = {
+        'video_id': video_id,
+        'content': data.get('content'),
+        'category': data.get('category', 'general'),
+        'timestamp': data.get('timestamp'),
+        'color': data.get('color', '#10B981')
+    }
+
+    if not note_data['content']:
+        return jsonify({'error': 'Note content is required'}), 400
+
+    note_id = db.add_note(note_data)
+    note = db.get_note(note_id)
+
+    return jsonify({
+        'success': True,
+        'note': note
+    }), 201
+
+
+@app.route('/api/notes/<int:note_id>', methods=['GET'])
+def get_note(note_id):
+    """Get a single note"""
+    note = db.get_note(note_id)
+
+    if not note:
+        return jsonify({'error': 'Note not found'}), 404
+
+    return jsonify({'note': note})
+
+
+@app.route('/api/notes/<int:note_id>', methods=['PUT'])
+def update_note(note_id):
+    """Update a note"""
+    note = db.get_note(note_id)
+
+    if not note:
+        return jsonify({'error': 'Note not found'}), 404
+
+    data = request.json
+    updates = {}
+
+    if 'content' in data:
+        updates['content'] = data['content']
+    if 'category' in data:
+        updates['category'] = data['category']
+    if 'timestamp' in data:
+        updates['timestamp'] = data['timestamp']
+    if 'color' in data:
+        updates['color'] = data['color']
+
+    if updates:
+        db.update_note(note_id, updates)
+
+    updated_note = db.get_note(note_id)
+    return jsonify({
+        'success': True,
+        'note': updated_note
+    })
+
+
+@app.route('/api/notes/<int:note_id>', methods=['DELETE'])
+def delete_note(note_id):
+    """Delete a note"""
+    note = db.get_note(note_id)
+
+    if not note:
+        return jsonify({'error': 'Note not found'}), 404
+
+    db.delete_note(note_id)
+    return jsonify({'success': True})
+
+
+@app.route('/api/notes/search', methods=['GET'])
+def search_notes():
+    """Search notes by content"""
+    query = request.args.get('q', '')
+    video_id = request.args.get('video_id')
+
+    if not query:
+        return jsonify({'error': 'Search query is required'}), 400
+
+    notes = db.search_notes(query, video_id)
+    return jsonify({'notes': notes})
+
+
+@app.route('/api/notes/recent', methods=['GET'])
+def get_recent_notes():
+    """Get recent notes across all videos"""
+    limit = request.args.get('limit', 100, type=int)
+    notes = db.get_all_notes_for_all_videos(limit)
+    return jsonify({'notes': notes})
+
+
 # ========== ERROR HANDLERS ==========
 
 @app.errorhandler(404)
