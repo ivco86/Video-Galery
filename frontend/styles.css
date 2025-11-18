@@ -2422,3 +2422,217 @@ kbd {
         text-align: left;
     }
 }
+
+/* ========== DOWNLOADS MANAGER ========== */
+
+.downloads-modal-content {
+    max-width: 900px;
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 2rem;
+}
+
+/* Downloads Tabs */
+.downloads-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid var(--border-color);
+    padding-bottom: 0.5rem;
+}
+
+.downloads-tab {
+    padding: 0.5rem 1rem;
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    transition: all 0.2s;
+}
+
+.downloads-tab:hover {
+    color: var(--text-primary);
+}
+
+.downloads-tab.active {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+    font-weight: 600;
+}
+
+/* Downloads Sections */
+.downloads-section {
+    display: none;
+}
+
+.downloads-section.active {
+    display: block;
+}
+
+/* Downloads List */
+.downloads-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.download-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 0.5rem;
+    border: 2px solid transparent;
+    transition: all 0.2s;
+}
+
+.download-item:hover {
+    border-color: var(--border-color);
+    background: var(--bg-tertiary);
+}
+
+.download-info {
+    flex: 1;
+    min-width: 0;
+    margin-right: 1rem;
+}
+
+.download-title {
+    font-weight: 500;
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.download-meta {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+}
+
+.download-quality {
+    padding: 0.125rem 0.5rem;
+    background: var(--primary-color);
+    color: white;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.download-status {
+    color: var(--text-secondary);
+}
+
+.download-error {
+    color: #EF4444;
+    font-size: 0.8rem;
+}
+
+/* Download Progress */
+.download-progress {
+    margin-top: 0.5rem;
+}
+
+.download-progress-bar {
+    width: 100%;
+    height: 8px;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 0.25rem;
+}
+
+.download-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary-color), var(--accent-color));
+    border-radius: 4px;
+    transition: width 0.3s;
+}
+
+.download-progress-text {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.download-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+/* Quality Selection Modal */
+.quality-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+}
+
+.quality-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border: 2px solid var(--border-color);
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: left;
+}
+
+.quality-btn:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--primary-color);
+}
+
+.quality-label {
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.quality-desc {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+/* Responsive Downloads */
+@media (max-width: 768px) {
+    .downloads-modal-content {
+        padding: 1rem;
+    }
+
+    .downloads-tabs {
+        flex-wrap: wrap;
+        gap: 0.25rem;
+    }
+
+    .downloads-tab {
+        font-size: 0.8rem;
+        padding: 0.4rem 0.75rem;
+    }
+
+    .download-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+
+    .download-info {
+        width: 100%;
+        margin-right: 0;
+    }
+
+    .download-actions {
+        align-self: flex-end;
+    }
+}

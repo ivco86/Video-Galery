@@ -343,6 +343,30 @@ class VideoGallery {
             analyticsPeriodSelect.addEventListener('change', () => this.loadAnalytics());
         }
 
+        // Downloads
+        const openDownloadsBtn = document.getElementById('openDownloadsBtn');
+        if (openDownloadsBtn) {
+            openDownloadsBtn.addEventListener('click', () => this.openDownloadsModal());
+        }
+
+        const downloadVideoBtn = document.getElementById('downloadVideoBtn');
+        if (downloadVideoBtn) {
+            downloadVideoBtn.addEventListener('click', () => this.openDownloadQualityModal());
+        }
+
+        // Download tabs
+        document.querySelectorAll('.downloads-tab').forEach(tab => {
+            tab.addEventListener('click', (e) => this.switchDownloadsTab(e.target.dataset.tab));
+        });
+
+        // Quality selection
+        document.querySelectorAll('.quality-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const quality = e.target.closest('.quality-btn').dataset.quality;
+                this.downloadVideo(quality);
+            });
+        });
+
         // Keyboard shortcuts (global)
         document.addEventListener('keydown', (e) => this.handleKeyPress(e));
     }
@@ -2428,6 +2452,256 @@ class VideoGallery {
             container.appendChild(item);
         });
     }
+
+    // ========== DOWNLOADS METHODS ==========
+
+    openDownloadsModal() {
+        const modal = document.getElementById('downloadsModal');
+        modal.style.display = 'flex';
+        this.loadDownloads();
+        // Auto-refresh every 2 seconds
+        this.downloadsRefreshInterval = setInterval(() => this.loadDownloads(), 2000);
+    }
+
+    closeDownloadsModal() {
+        const modal = document.getElementById('downloadsModal');
+        modal.style.display = 'none';
+        if (this.downloadsRefreshInterval) {
+            clearInterval(this.downloadsRefreshInterval);
+        }
+    }
+
+    openDownloadQualityModal() {
+        if (!this.currentVideo) return;
+        const modal = document.getElementById('downloadQualityModal');
+        modal.style.display = 'flex';
+    }
+
+    closeDownloadQualityModal() {
+        const modal = document.getElementById('downloadQualityModal');
+        modal.style.display = 'none';
+    }
+
+    async downloadVideo(quality) {
+        if (!this.currentVideo) return;
+
+        const downloadData = {
+            video_id: this.currentVideo.video_id,
+            url: this.currentVideo.url,
+            title: this.currentVideo.title,
+            quality: quality,
+            start_immediately: true
+        };
+
+        try {
+            await this.apiCall('/downloads', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(downloadData)
+            });
+
+            this.showToast(`Изтеглянето на "${this.currentVideo.title}" е добавено в опашката`, 'success');
+            this.closeDownloadQualityModal();
+        } catch (error) {
+            console.error('Error adding download:', error);
+            this.showToast('Грешка при добавяне на изтеглянето', 'error');
+        }
+    }
+
+    async loadDownloads() {
+        try {
+            const downloads = await this.apiCall('/downloads');
+
+            // Update counts
+            document.getElementById('downloadingCount').textContent = downloads.downloading?.length || 0;
+            document.getElementById('completedCount').textContent = downloads.completed?.length || 0;
+            document.getElementById('pendingCount').textContent = downloads.pending?.length || 0;
+            document.getElementById('failedCount').textContent = downloads.failed?.length || 0;
+
+            // Render active tab
+            const activeTab = document.querySelector('.downloads-tab.active').dataset.tab;
+            this.renderDownloads(activeTab, downloads[activeTab] || []);
+
+        } catch (error) {
+            console.error('Error loading downloads:', error);
+        }
+    }
+
+    switchDownloadsTab(tab) {
+        // Update tab buttons
+        document.querySelectorAll('.downloads-tab').forEach(t => t.classList.remove('active'));
+        document.querySelector(`.downloads-tab[data-tab="${tab}"]`).classList.add('active');
+
+        // Update sections
+        document.querySelectorAll('.downloads-section').forEach(s => s.classList.remove('active'));
+        document.getElementById(`${tab}Section`).classList.add('active');
+
+        // Load data for the tab
+        this.loadDownloads();
+    }
+
+    renderDownloads(tab, downloads) {
+        const container = document.getElementById(`${tab}List`);
+
+        if (!downloads || downloads.length === 0) {
+            container.innerHTML = '<p class="empty-message">Няма изтегляния</p>';
+            return;
+        }
+
+        container.innerHTML = '';
+
+        downloads.forEach(download => {
+            const item = document.createElement('div');
+            item.className = 'download-item';
+
+            const statusLabel = {
+                'pending': '⏳ Чакащ',
+                'downloading': '⬇️ Изтегля се',
+                'completed': '✅ Завършен',
+                'failed': '❌ Неуспешен',
+                'cancelled': '🚫 Отменен'
+            }[download.status] || download.status;
+
+            let progressHtml = '';
+            if (download.status === 'downloading') {
+                const progress = download.real_time_info?.progress || download.progress || 0;
+                const speed = download.real_time_info?.speed || 0;
+                const speedText = speed > 0 ? `${(speed / 1024 / 1024).toFixed(2)} MB/s` : '';
+
+                progressHtml = `
+                    <div class="download-progress">
+                        <div class="download-progress-bar">
+                            <div class="download-progress-fill" style="width: ${progress}%"></div>
+                        </div>
+                        <div class="download-progress-text">${progress}% ${speedText}</div>
+                    </div>
+                `;
+            }
+
+            let actionsHtml = '';
+            if (download.status === 'downloading') {
+                actionsHtml = `<button class="btn-icon-small" onclick="app.cancelDownload(${download.id})">🚫 Откажи</button>`;
+            } else if (download.status === 'pending') {
+                actionsHtml = `
+                    <button class="btn-icon-small" onclick="app.startDownload(${download.id})">▶️ Старт</button>
+                    <button class="btn-icon-small" onclick="app.deleteDownload(${download.id}, false)">🗑️ Изтрий</button>
+                `;
+            } else if (download.status === 'completed') {
+                actionsHtml = `
+                    <button class="btn-icon-small" onclick="app.playDownloadedVideo(${download.id})">▶️ Пусни</button>
+                    <button class="btn-icon-small" onclick="app.deleteDownload(${download.id}, true)">🗑️ Изтрий</button>
+                `;
+            } else {
+                actionsHtml = `<button class="btn-icon-small" onclick="app.deleteDownload(${download.id}, false)">🗑️ Изтрий</button>`;
+            }
+
+            const qualityLabel = {
+                'best': 'Най-добро',
+                '1080p': '1080p',
+                '720p': '720p',
+                '480p': '480p',
+                '360p': '360p',
+                'audio': 'Аудио'
+            }[download.quality] || download.quality;
+
+            item.innerHTML = `
+                <div class="download-info">
+                    <div class="download-title">${this.escapeHtml(download.title || 'Unknown')}</div>
+                    <div class="download-meta">
+                        <span class="download-quality">${qualityLabel}</span>
+                        <span class="download-status">${statusLabel}</span>
+                        ${download.error_message ? `<span class="download-error">${this.escapeHtml(download.error_message)}</span>` : ''}
+                    </div>
+                    ${progressHtml}
+                </div>
+                <div class="download-actions">
+                    ${actionsHtml}
+                </div>
+            `;
+
+            container.appendChild(item);
+        });
+    }
+
+    async startDownload(downloadId) {
+        try {
+            await this.apiCall(`/downloads/${downloadId}/start`, {
+                method: 'POST'
+            });
+            this.showToast('Изтеглянето е стартирано', 'success');
+        } catch (error) {
+            console.error('Error starting download:', error);
+        }
+    }
+
+    async cancelDownload(downloadId) {
+        try {
+            await this.apiCall(`/downloads/${downloadId}/cancel`, {
+                method: 'POST'
+            });
+            this.showToast('Изтеглянето е отменено', 'success');
+        } catch (error) {
+            console.error('Error cancelling download:', error);
+        }
+    }
+
+    async deleteDownload(downloadId, deleteFile) {
+        if (!confirm('Сигурни ли сте, че искате да изтриете това изтегляне?')) {
+            return;
+        }
+
+        try {
+            await this.apiCall(`/downloads/${downloadId}?delete_file=${deleteFile}`, {
+                method: 'DELETE'
+            });
+            this.showToast('Изтеглянето е изтрито', 'success');
+            this.loadDownloads();
+        } catch (error) {
+            console.error('Error deleting download:', error);
+        }
+    }
+
+    async playDownloadedVideo(downloadId) {
+        // Load download info and play the video
+        try {
+            const response = await this.apiCall(`/downloads/${downloadId}`);
+            const download = response.download;
+
+            if (download && download.status === 'completed') {
+                // Create a pseudo-video object for the player
+                const video = {
+                    video_id: download.video_id,
+                    title: download.title,
+                    source: 'local',
+                    url: `/api/downloads/${downloadId}/stream`,
+                    duration: 0,
+                    channel_name: 'Downloaded',
+                    description: 'Downloaded video'
+                };
+
+                this.currentVideo = video;
+                this.closeDownloadsModal();
+
+                // Open video modal with downloaded video
+                const modal = document.getElementById('videoModal');
+                const videoPlayer = document.getElementById('videoPlayer');
+                const youtubePlayer = document.getElementById('youtubePlayer');
+
+                document.getElementById('videoTitle').textContent = video.title;
+                document.getElementById('videoChannel').textContent = video.channel_name;
+
+                youtubePlayer.style.display = 'none';
+                videoPlayer.style.display = 'block';
+                videoPlayer.src = video.url;
+                videoPlayer.load();
+
+                modal.style.display = 'flex';
+            }
+        } catch (error) {
+            console.error('Error playing downloaded video:', error);
+            this.showToast('Грешка при пускане на видеото', 'error');
+        }
+    }
 }
 
 // Modal close functions (global)
@@ -2479,6 +2753,18 @@ function closeAddRssFeedModal() {
 function closeAnalyticsModal() {
     if (window.app) {
         window.app.closeAnalyticsModal();
+    }
+}
+
+function closeDownloadsModal() {
+    if (window.app) {
+        window.app.closeDownloadsModal();
+    }
+}
+
+function closeDownloadQualityModal() {
+    if (window.app) {
+        window.app.closeDownloadQualityModal();
     }
 }
 

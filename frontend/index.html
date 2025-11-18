@@ -113,6 +113,9 @@
                 <button id="openAnalyticsBtn" class="btn btn-primary btn-small" style="width: 100%; margin-top: 0.75rem;">
                     📊 Аналитика
                 </button>
+                <button id="openDownloadsBtn" class="btn btn-secondary btn-small" style="width: 100%; margin-top: 0.5rem;">
+                    📥 Downloads
+                </button>
             </div>
         </aside>
 
@@ -254,6 +257,7 @@
                     <button id="watchLaterBtn" class="btn btn-icon">🕐 Watch Later</button>
                     <button id="addToPlaylistBtn" class="btn btn-icon">▶️ Добави в плейлист</button>
                     <button id="addToBoardBtn" class="btn btn-icon">➕ Добави в колекция</button>
+                    <button id="downloadVideoBtn" class="btn btn-icon">📥 Download</button>
                     <button id="analyzeBtn" class="btn btn-icon">🤖 AI Анализ</button>
                 </div>
 
@@ -748,6 +752,86 @@
                 <div id="channelStatsChart" class="channel-stats">
                     <!-- Channel stats will be rendered here -->
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Downloads Manager Modal -->
+    <div id="downloadsModal" class="modal" style="display: none;">
+        <div class="modal-overlay" onclick="closeDownloadsModal()"></div>
+        <div class="modal-content downloads-modal-content">
+            <button class="modal-close" onclick="closeDownloadsModal()">✕</button>
+            <h2>📥 Download Manager</h2>
+
+            <!-- Downloads Tabs -->
+            <div class="downloads-tabs">
+                <button class="downloads-tab active" data-tab="downloading">Изтегляне (<span id="downloadingCount">0</span>)</button>
+                <button class="downloads-tab" data-tab="completed">Завършени (<span id="completedCount">0</span>)</button>
+                <button class="downloads-tab" data-tab="pending">Чакащи (<span id="pendingCount">0</span>)</button>
+                <button class="downloads-tab" data-tab="failed">Неуспешни (<span id="failedCount">0</span>)</button>
+            </div>
+
+            <!-- Active Downloads Section -->
+            <div id="downloadingSection" class="downloads-section active">
+                <div id="downloadingList" class="downloads-list">
+                    <!-- Active downloads will be rendered here -->
+                </div>
+            </div>
+
+            <!-- Completed Downloads Section -->
+            <div id="completedSection" class="downloads-section">
+                <div id="completedList" class="downloads-list">
+                    <!-- Completed downloads will be rendered here -->
+                </div>
+            </div>
+
+            <!-- Pending Downloads Section -->
+            <div id="pendingSection" class="downloads-section">
+                <div id="pendingList" class="downloads-list">
+                    <!-- Pending downloads will be rendered here -->
+                </div>
+            </div>
+
+            <!-- Failed Downloads Section -->
+            <div id="failedSection" class="downloads-section">
+                <div id="failedList" class="downloads-list">
+                    <!-- Failed downloads will be rendered here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Download Quality Modal -->
+    <div id="downloadQualityModal" class="modal" style="display: none;">
+        <div class="modal-overlay" onclick="closeDownloadQualityModal()"></div>
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeDownloadQualityModal()">✕</button>
+            <h2>Избери качество</h2>
+            <div class="quality-options">
+                <button class="quality-btn" data-quality="best">
+                    <span class="quality-label">Най-добро</span>
+                    <span class="quality-desc">Най-високо налично качество</span>
+                </button>
+                <button class="quality-btn" data-quality="1080p">
+                    <span class="quality-label">1080p (Full HD)</span>
+                    <span class="quality-desc">1920x1080</span>
+                </button>
+                <button class="quality-btn" data-quality="720p">
+                    <span class="quality-label">720p (HD)</span>
+                    <span class="quality-desc">1280x720</span>
+                </button>
+                <button class="quality-btn" data-quality="480p">
+                    <span class="quality-label">480p (SD)</span>
+                    <span class="quality-desc">854x480</span>
+                </button>
+                <button class="quality-btn" data-quality="360p">
+                    <span class="quality-label">360p</span>
+                    <span class="quality-desc">640x360</span>
+                </button>
+                <button class="quality-btn" data-quality="audio">
+                    <span class="quality-label">Само аудио</span>
+                    <span class="quality-desc">MP3/M4A формат</span>
+                </button>
             </div>
         </div>
     </div>
