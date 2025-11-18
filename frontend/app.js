@@ -30,6 +30,11 @@ class VideoGallery {
         this.selectedBookmarkColor = '#3B82F6';
         this.editingBookmark = null;
 
+        // Player state
+        this.playerLoop = false;
+        this.playerIsMuted = false;
+        this.playerCurrentSpeed = 1;
+
         this.init();
     }
 
@@ -194,6 +199,69 @@ class VideoGallery {
                 this.selectedBookmarkColor = e.target.dataset.color;
             });
         });
+
+        // Player controls
+        const playerPlayPauseBtn = document.getElementById('playerPlayPauseBtn');
+        if (playerPlayPauseBtn) {
+            playerPlayPauseBtn.addEventListener('click', () => this.togglePlayPause());
+        }
+
+        const playerRewind10Btn = document.getElementById('playerRewind10Btn');
+        if (playerRewind10Btn) {
+            playerRewind10Btn.addEventListener('click', () => this.seekVideo(-10));
+        }
+
+        const playerForward10Btn = document.getElementById('playerForward10Btn');
+        if (playerForward10Btn) {
+            playerForward10Btn.addEventListener('click', () => this.seekVideo(10));
+        }
+
+        const playerLoopBtn = document.getElementById('playerLoopBtn');
+        if (playerLoopBtn) {
+            playerLoopBtn.addEventListener('click', () => this.toggleLoop());
+        }
+
+        const playerMuteBtn = document.getElementById('playerMuteBtn');
+        if (playerMuteBtn) {
+            playerMuteBtn.addEventListener('click', () => this.toggleMute());
+        }
+
+        const playerVolumeSlider = document.getElementById('playerVolumeSlider');
+        if (playerVolumeSlider) {
+            playerVolumeSlider.addEventListener('input', (e) => this.setVolume(e.target.value));
+        }
+
+        const playerSpeedSelect = document.getElementById('playerSpeedSelect');
+        if (playerSpeedSelect) {
+            playerSpeedSelect.addEventListener('change', (e) => this.setPlaybackSpeed(parseFloat(e.target.value)));
+        }
+
+        const playerFullscreenBtn = document.getElementById('playerFullscreenBtn');
+        if (playerFullscreenBtn) {
+            playerFullscreenBtn.addEventListener('click', () => this.toggleFullscreen());
+        }
+
+        const playerShortcutsBtn = document.getElementById('playerShortcutsBtn');
+        if (playerShortcutsBtn) {
+            playerShortcutsBtn.addEventListener('click', () => this.showKeyboardShortcuts());
+        }
+
+        // Progress bar interaction
+        const playerProgress = document.getElementById('playerProgress');
+        if (playerProgress) {
+            playerProgress.addEventListener('click', (e) => this.handleProgressClick(e));
+        }
+
+        // Video player events
+        const videoPlayer = document.getElementById('videoPlayer');
+        if (videoPlayer) {
+            videoPlayer.addEventListener('timeupdate', () => this.updateProgress());
+            videoPlayer.addEventListener('loadedmetadata', () => this.onVideoLoaded());
+            videoPlayer.addEventListener('ended', () => this.onVideoEnded());
+        }
+
+        // Keyboard shortcuts (global)
+        document.addEventListener('keydown', (e) => this.handleKeyPress(e));
     }
 
     // API Calls
@@ -1327,6 +1395,275 @@ class VideoGallery {
         return div.innerHTML;
     }
 
+    // ========== PLAYER CONTROL METHODS ==========
+
+    togglePlayPause() {
+        const videoPlayer = document.getElementById('videoPlayer');
+        if (!videoPlayer) return;
+
+        if (videoPlayer.paused) {
+            videoPlayer.play();
+            document.getElementById('playerPlayPauseBtn').textContent = '⏸️';
+        } else {
+            videoPlayer.pause();
+            document.getElementById('playerPlayPauseBtn').textContent = '▶️';
+        }
+    }
+
+    seekVideo(seconds) {
+        const videoPlayer = document.getElementById('videoPlayer');
+        if (!videoPlayer) return;
+
+        videoPlayer.currentTime = Math.max(0, Math.min(videoPlayer.duration, videoPlayer.currentTime + seconds));
+    }
+
+    toggleLoop() {
+        const videoPlayer = document.getElementById('videoPlayer');
+        if (!videoPlayer) return;
+
+        this.playerLoop = !this.playerLoop;
+        videoPlayer.loop = this.playerLoop;
+
+        const loopBtn = document.getElementById('playerLoopBtn');
+        if (loopBtn) {
+            loopBtn.style.opacity = this.playerLoop ? '1' : '0.5';
+            loopBtn.style.color = this.playerLoop ? 'var(--primary-color)' : '';
+        }
+    }
+
+    toggleMute() {
+        const videoPlayer = document.getElementById('videoPlayer');
+        if (!videoPlayer) return;
+
+        this.playerIsMuted = !this.playerIsMuted;
+        videoPlayer.muted = this.playerIsMuted;
+
+        const muteBtn = document.getElementById('playerMuteBtn');
+        if (muteBtn) {
+            muteBtn.textContent = this.playerIsMuted ? '🔇' : '🔊';
+        }
+    }
+
+    setVolume(value) {
+        const videoPlayer = document.getElementById('videoPlayer');
+        if (!videoPlayer) return;
+
+        const volume = value / 100;
+        videoPlayer.volume = volume;
+
+        if (volume === 0) {
+            this.playerIsMuted = true;
+            videoPlayer.muted = true;
+            document.getElementById('playerMuteBtn').textContent = '🔇';
+        } else {
+            this.playerIsMuted = false;
+            videoPlayer.muted = false;
+            document.getElementById('playerMuteBtn').textContent = '🔊';
+        }
+    }
+
+    setPlaybackSpeed(speed) {
+        const videoPlayer = document.getElementById('videoPlayer');
+        if (!videoPlayer) return;
+
+        this.playerCurrentSpeed = speed;
+        videoPlayer.playbackRate = speed;
+        this.showToast(`Speed: ${speed}x`, 'info');
+    }
+
+    toggleFullscreen() {
+        const container = document.getElementById('videoPlayer');
+        if (!container) return;
+
+        if (!document.fullscreenElement) {
+            container.requestFullscreen().catch(err => {
+                console.error('Error entering fullscreen:', err);
+            });
+        } else {
+            document.exitFullscreen();
+        }
+    }
+
+    showKeyboardShortcuts() {
+        document.getElementById('shortcutsModal').style.display = 'flex';
+    }
+
+    handleProgressClick(e) {
+        const videoPlayer = document.getElementById('videoPlayer');
+        const progressBar = document.getElementById('playerProgress');
+        if (!videoPlayer || !progressBar) return;
+
+        const rect = progressBar.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const percentage = clickX / rect.width;
+        videoPlayer.currentTime = percentage * videoPlayer.duration;
+    }
+
+    updateProgress() {
+        const videoPlayer = document.getElementById('videoPlayer');
+        if (!videoPlayer) return;
+
+        const progressFilled = document.getElementById('playerProgressFilled');
+        const currentTimeEl = document.getElementById('playerCurrentTime');
+
+        if (progressFilled && videoPlayer.duration) {
+            const percentage = (videoPlayer.currentTime / videoPlayer.duration) * 100;
+            progressFilled.style.width = `${percentage}%`;
+        }
+
+        if (currentTimeEl) {
+            currentTimeEl.textContent = this.formatDuration(Math.floor(videoPlayer.currentTime));
+        }
+    }
+
+    onVideoLoaded() {
+        const videoPlayer = document.getElementById('videoPlayer');
+        const durationEl = document.getElementById('playerDuration');
+
+        if (durationEl && videoPlayer) {
+            durationEl.textContent = this.formatDuration(Math.floor(videoPlayer.duration));
+        }
+
+        // Show custom controls for local videos
+        if (this.currentVideo && this.currentVideo.source === 'local') {
+            document.getElementById('customPlayerControls').style.display = 'block';
+        } else {
+            document.getElementById('customPlayerControls').style.display = 'none';
+        }
+    }
+
+    onVideoEnded() {
+        const videoPlayer = document.getElementById('videoPlayer');
+        if (!videoPlayer) return;
+
+        // Reset play button
+        document.getElementById('playerPlayPauseBtn').textContent = '▶️';
+
+        // If not looping, reset to start
+        if (!this.playerLoop) {
+            videoPlayer.currentTime = 0;
+        }
+    }
+
+    handleKeyPress(e) {
+        // Ignore if typing in input fields
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+            return;
+        }
+
+        // Only handle shortcuts when video modal is open
+        const videoModal = document.getElementById('videoModal');
+        if (!videoModal || videoModal.style.display === 'none') {
+            return;
+        }
+
+        const videoPlayer = document.getElementById('videoPlayer');
+        if (!videoPlayer) return;
+
+        switch (e.key.toLowerCase()) {
+            case ' ':  // Space - Play/Pause
+                e.preventDefault();
+                this.togglePlayPause();
+                break;
+
+            case 'k':  // K - Play/Pause (YouTube style)
+                e.preventDefault();
+                this.togglePlayPause();
+                break;
+
+            case 'j':  // J - Rewind 10s
+                e.preventDefault();
+                this.seekVideo(-10);
+                this.showToast('⏪ -10s', 'info');
+                break;
+
+            case 'l':  // L - Forward 10s
+                e.preventDefault();
+                this.seekVideo(10);
+                this.showToast('⏩ +10s', 'info');
+                break;
+
+            case 'arrowleft':  // Left Arrow - Seek backward 5s
+                e.preventDefault();
+                this.seekVideo(-5);
+                break;
+
+            case 'arrowright':  // Right Arrow - Seek forward 5s
+                e.preventDefault();
+                this.seekVideo(5);
+                break;
+
+            case 'arrowup':  // Up Arrow - Volume up 10%
+                e.preventDefault();
+                const currentVolume = videoPlayer.volume * 100;
+                const newVolumeUp = Math.min(100, currentVolume + 10);
+                this.setVolume(newVolumeUp);
+                document.getElementById('playerVolumeSlider').value = newVolumeUp;
+                this.showToast(`Volume: ${Math.round(newVolumeUp)}%`, 'info');
+                break;
+
+            case 'arrowdown':  // Down Arrow - Volume down 10%
+                e.preventDefault();
+                const currentVolumeDown = videoPlayer.volume * 100;
+                const newVolumeDown = Math.max(0, currentVolumeDown - 10);
+                this.setVolume(newVolumeDown);
+                document.getElementById('playerVolumeSlider').value = newVolumeDown;
+                this.showToast(`Volume: ${Math.round(newVolumeDown)}%`, 'info');
+                break;
+
+            case 'm':  // M - Mute/Unmute
+                e.preventDefault();
+                this.toggleMute();
+                break;
+
+            case 'f':  // F - Fullscreen
+                e.preventDefault();
+                this.toggleFullscreen();
+                break;
+
+            case '<':  // < - Decrease speed
+            case ',':  // , (same key as <)
+                e.preventDefault();
+                const speeds = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+                const currentIndex = speeds.indexOf(this.playerCurrentSpeed);
+                if (currentIndex > 0) {
+                    const newSpeed = speeds[currentIndex - 1];
+                    this.setPlaybackSpeed(newSpeed);
+                    document.getElementById('playerSpeedSelect').value = newSpeed;
+                }
+                break;
+
+            case '>':  // > - Increase speed
+            case '.':  // . (same key as >)
+                e.preventDefault();
+                const speedsInc = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+                const currentIndexInc = speedsInc.indexOf(this.playerCurrentSpeed);
+                if (currentIndexInc < speedsInc.length - 1) {
+                    const newSpeed = speedsInc[currentIndexInc + 1];
+                    this.setPlaybackSpeed(newSpeed);
+                    document.getElementById('playerSpeedSelect').value = newSpeed;
+                }
+                break;
+
+            case '0':
+            case '1':
+            case '2':
+            case '3':
+            case '4':
+            case '5':
+            case '6':
+            case '7':
+            case '8':
+            case '9':
+                // 0-9 - Jump to percentage
+                e.preventDefault();
+                const percentage = parseInt(e.key) * 10;
+                videoPlayer.currentTime = (percentage / 100) * videoPlayer.duration;
+                this.showToast(`Jumped to ${percentage}%`, 'info');
+                break;
+        }
+    }
+
     // ========== RECOMMENDATIONS METHODS ==========
 
     async loadRecommendations(videoId) {
@@ -1425,6 +1762,10 @@ function closePlaylistPlayerModal() {
 
 function closeBookmarkModal() {
     document.getElementById('bookmarkModal').style.display = 'none';
+}
+
+function closeShortcutsModal() {
+    document.getElementById('shortcutsModal').style.display = 'none';
 }
 
 // Initialize app when DOM is ready

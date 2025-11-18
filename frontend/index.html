@@ -159,7 +159,7 @@
             <button class="modal-close" onclick="closeVideoModal()">✕</button>
 
             <div class="video-player-container">
-                <video id="videoPlayer" class="video-player" controls>
+                <video id="videoPlayer" class="video-player">
                     <track id="subtitleTrack" kind="subtitles" srclang="bg" label="Bulgarian">
                 </video>
 
@@ -169,6 +169,59 @@
                             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                             allowfullscreen>
                     </iframe>
+                </div>
+
+                <!-- Custom Player Controls (for local videos only) -->
+                <div id="customPlayerControls" class="custom-player-controls" style="display: none;">
+                    <!-- Progress Bar -->
+                    <div class="player-progress-container">
+                        <div id="playerProgress" class="player-progress">
+                            <div id="playerProgressFilled" class="player-progress-filled"></div>
+                            <div id="playerProgressHandle" class="player-progress-handle"></div>
+                        </div>
+                        <div class="player-time">
+                            <span id="playerCurrentTime">0:00</span>
+                            <span id="playerDuration">0:00</span>
+                        </div>
+                    </div>
+
+                    <!-- Control Buttons -->
+                    <div class="player-controls-row">
+                        <div class="player-controls-left">
+                            <button id="playerPlayPauseBtn" class="player-btn" title="Play/Pause (Space)">▶️</button>
+                            <button id="playerRewind10Btn" class="player-btn" title="Rewind 10s (J)">⏪</button>
+                            <button id="playerForward10Btn" class="player-btn" title="Forward 10s (L)">⏩</button>
+                            <button id="playerLoopBtn" class="player-btn" title="Loop">🔁</button>
+
+                            <!-- Volume Control -->
+                            <div class="player-volume-control">
+                                <button id="playerMuteBtn" class="player-btn" title="Mute (M)">🔊</button>
+                                <input type="range" id="playerVolumeSlider" class="player-volume-slider" min="0" max="100" value="100">
+                            </div>
+                        </div>
+
+                        <div class="player-controls-right">
+                            <!-- Playback Speed -->
+                            <div class="player-speed-control">
+                                <label for="playerSpeedSelect">Speed:</label>
+                                <select id="playerSpeedSelect" class="player-speed-select">
+                                    <option value="0.25">0.25x</option>
+                                    <option value="0.5">0.5x</option>
+                                    <option value="0.75">0.75x</option>
+                                    <option value="1" selected>1x</option>
+                                    <option value="1.25">1.25x</option>
+                                    <option value="1.5">1.5x</option>
+                                    <option value="1.75">1.75x</option>
+                                    <option value="2">2x</option>
+                                </select>
+                            </div>
+
+                            <button id="playerFullscreenBtn" class="player-btn" title="Fullscreen (F)">⛶</button>
+                        </div>
+                    </div>
+
+                    <!-- Keyboard Shortcuts Help -->
+                    <button id="playerShortcutsBtn" class="player-shortcuts-btn" title="Keyboard Shortcuts">⌨️</button>
                 </div>
             </div>
 
@@ -405,6 +458,65 @@
                     <div id="playlistQueueList" class="playlist-queue-list">
                         <!-- Queue items will be loaded here -->
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Keyboard Shortcuts Modal -->
+    <div id="shortcutsModal" class="modal" style="display: none;">
+        <div class="modal-overlay" onclick="closeShortcutsModal()"></div>
+        <div class="modal-content shortcuts-modal-content">
+            <button class="modal-close" onclick="closeShortcutsModal()">✕</button>
+            <h2>⌨️ Keyboard Shortcuts</h2>
+            <div class="shortcuts-grid">
+                <div class="shortcut-item">
+                    <kbd>Space</kbd>
+                    <span>Play / Pause</span>
+                </div>
+                <div class="shortcut-item">
+                    <kbd>J</kbd>
+                    <span>Rewind 10 seconds</span>
+                </div>
+                <div class="shortcut-item">
+                    <kbd>K</kbd>
+                    <span>Play / Pause</span>
+                </div>
+                <div class="shortcut-item">
+                    <kbd>L</kbd>
+                    <span>Forward 10 seconds</span>
+                </div>
+                <div class="shortcut-item">
+                    <kbd>←</kbd>
+                    <span>Seek backward 5s</span>
+                </div>
+                <div class="shortcut-item">
+                    <kbd>→</kbd>
+                    <span>Seek forward 5s</span>
+                </div>
+                <div class="shortcut-item">
+                    <kbd>↑</kbd>
+                    <span>Volume up 10%</span>
+                </div>
+                <div class="shortcut-item">
+                    <kbd>↓</kbd>
+                    <span>Volume down 10%</span>
+                </div>
+                <div class="shortcut-item">
+                    <kbd>M</kbd>
+                    <span>Mute / Unmute</span>
+                </div>
+                <div class="shortcut-item">
+                    <kbd>F</kbd>
+                    <span>Fullscreen</span>
+                </div>
+                <div class="shortcut-item">
+                    <kbd>0-9</kbd>
+                    <span>Jump to 0%-90%</span>
+                </div>
+                <div class="shortcut-item">
+                    <kbd>&lt; / &gt;</kbd>
+                    <span>Decrease / Increase speed</span>
                 </div>
             </div>
         </div>
