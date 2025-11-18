@@ -151,6 +151,21 @@ class VideoDatabase:
             )
         ''')
 
+        # RSS Feeds table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS rss_feeds (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                url TEXT UNIQUE NOT NULL,
+                title TEXT,
+                description TEXT,
+                added_date TEXT,
+                last_sync TEXT,
+                auto_sync BOOLEAN DEFAULT 1,
+                sync_interval INTEGER DEFAULT 3600,
+                video_count INTEGER DEFAULT 0
+            )
+        ''')
+
         conn.commit()
         conn.close()
 
@@ -987,3 +1002,97 @@ class VideoDatabase:
 
         # Return top N videos
         return scored_videos[:limit]
+
+    # RSS Feed operations
+    def add_rss_feed(self, feed_data: Dict[str, Any]) -> int:
+        """Add a new RSS feed"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        feed_data['added_date'] = datetime.now().isoformat()
+
+        try:
+            cursor.execute('''
+                INSERT INTO rss_feeds (
+                    url, title, description, added_date, auto_sync, sync_interval
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            ''', (
+                feed_data.get('url'),
+                feed_data.get('title'),
+                feed_data.get('description'),
+                feed_data.get('added_date'),
+                feed_data.get('auto_sync', True),
+                feed_data.get('sync_interval', 3600)
+            ))
+
+            conn.commit()
+            return cursor.lastrowid
+        except sqlite3.IntegrityError:
+            return -1  # Feed already exists
+        finally:
+            conn.close()
+
+    def get_rss_feeds(self) -> List[Dict]:
+        """Get all RSS feeds"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT * FROM rss_feeds ORDER BY added_date DESC')
+        feeds = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return feeds
+
+    def get_rss_feed(self, feed_id: int) -> Optional[Dict]:
+        """Get a single RSS feed"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT * FROM rss_feeds WHERE id = ?', (feed_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        return dict(row) if row else None
+
+    def update_rss_feed(self, feed_id: int, updates: Dict[str, Any]) -> bool:
+        """Update RSS feed information"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        set_clause = ', '.join([f'{key} = ?' for key in updates.keys()])
+        values = list(updates.values()) + [feed_id]
+
+        cursor.execute(f'UPDATE rss_feeds SET {set_clause} WHERE id = ?', values)
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+
+        return affected > 0
+
+    def delete_rss_feed(self, feed_id: int) -> bool:
+        """Delete an RSS feed"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM rss_feeds WHERE id = ?', (feed_id,))
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+
+        return affected > 0
+
+    def update_feed_sync_time(self, feed_id: int, video_count: int = 0):
+        """Update feed's last sync time and video count"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            UPDATE rss_feeds
+            SET last_sync = ?, video_count = ?
+            WHERE id = ?
+        ''', (datetime.now().isoformat(), video_count, feed_id))
+
+        conn.commit()
+        conn.close()

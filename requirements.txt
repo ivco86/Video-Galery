@@ -17,6 +17,9 @@ webvtt-py==0.4.6
 # HTTP Requests
 requests==2.31.0
 
+# RSS/Feed Parsing
+feedparser==6.0.10
+
 # Database (SQLite is built-in, no additional package needed)
 
 # Optional: Additional utilities

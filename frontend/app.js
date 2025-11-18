@@ -35,6 +35,9 @@ class VideoGallery {
         this.playerIsMuted = false;
         this.playerCurrentSpeed = 1;
 
+        // RSS Feed state
+        this.rssFeeds = [];
+
         this.init();
     }
 
@@ -43,6 +46,7 @@ class VideoGallery {
         await this.loadVideos();
         await this.loadBoards();
         await this.loadPlaylists();
+        await this.loadRssFeeds();
         this.updateStats();
     }
 
@@ -258,6 +262,22 @@ class VideoGallery {
             videoPlayer.addEventListener('timeupdate', () => this.updateProgress());
             videoPlayer.addEventListener('loadedmetadata', () => this.onVideoLoaded());
             videoPlayer.addEventListener('ended', () => this.onVideoEnded());
+        }
+
+        // RSS Feeds
+        const addRssFeedBtn = document.getElementById('addRssFeedBtn');
+        if (addRssFeedBtn) {
+            addRssFeedBtn.addEventListener('click', () => this.openAddRssFeedModal());
+        }
+
+        const addRssFeedSubmitBtn = document.getElementById('addRssFeedSubmitBtn');
+        if (addRssFeedSubmitBtn) {
+            addRssFeedSubmitBtn.addEventListener('click', () => this.addRssFeed());
+        }
+
+        const syncAllFeedsBtn = document.getElementById('syncAllFeedsBtn');
+        if (syncAllFeedsBtn) {
+            syncAllFeedsBtn.addEventListener('click', () => this.syncAllRssFeeds());
         }
 
         // Keyboard shortcuts (global)
@@ -1664,6 +1684,149 @@ class VideoGallery {
         }
     }
 
+    // ========== RSS FEED METHODS ==========
+
+    async loadRssFeeds() {
+        try {
+            this.rssFeeds = await this.apiCall('/rss/feeds');
+            this.renderRssFeeds();
+        } catch (error) {
+            console.error('Error loading RSS feeds:', error);
+        }
+    }
+
+    renderRssFeeds() {
+        const container = document.getElementById('rssFeedsList');
+
+        if (!this.rssFeeds || this.rssFeeds.length === 0) {
+            container.innerHTML = '<li class="empty-message">Няма RSS feeds</li>';
+            return;
+        }
+
+        container.innerHTML = '';
+
+        this.rssFeeds.forEach(feed => {
+            const item = document.createElement('li');
+            item.className = 'rss-feed-item';
+            item.innerHTML = `
+                <div class="rss-feed-info">
+                    <span class="rss-feed-title">${this.escapeHtml(feed.title)}</span>
+                    <span class="rss-feed-count">${feed.video_count || 0} videos</span>
+                </div>
+                <div class="rss-feed-actions">
+                    <button class="btn-icon-small" onclick="app.syncRssFeed(${feed.id})" title="Sync">🔄</button>
+                    <button class="btn-icon-small" onclick="app.deleteRssFeed(${feed.id})" title="Delete">🗑️</button>
+                </div>
+            `;
+            container.appendChild(item);
+        });
+    }
+
+    openAddRssFeedModal() {
+        document.getElementById('rssFeedUrlInput').value = '';
+        document.getElementById('rssAutoSyncInput').checked = true;
+        document.getElementById('addRssFeedModal').style.display = 'flex';
+    }
+
+    async addRssFeed() {
+        const url = document.getElementById('rssFeedUrlInput').value.trim();
+        const autoSync = document.getElementById('rssAutoSyncInput').checked;
+
+        if (!url) {
+            this.showToast('Моля въведете RSS Feed URL', 'error');
+            return;
+        }
+
+        this.showLoading(true);
+
+        try {
+            const result = await this.apiCall('/rss/feeds', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url, auto_sync: autoSync })
+            });
+
+            this.showToast(`Feed "${result.feed_info.title}" добавен успешно!`, 'success');
+            await this.loadRssFeeds();
+            this.closeAddRssFeedModal();
+
+            // Ask if user wants to sync now
+            if (confirm(`Искате ли да синхронизирате "${result.feed_info.title}" сега?`)) {
+                await this.syncRssFeed(result.feed_id);
+            }
+
+        } catch (error) {
+            console.error('Error adding RSS feed:', error);
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    async syncRssFeed(feedId) {
+        this.showLoading(true);
+        this.showToast('Синхронизирам feed...', 'info');
+
+        try {
+            const result = await this.apiCall(`/rss/feeds/${feedId}/sync`, {
+                method: 'POST'
+            });
+
+            this.showToast(`Добавени ${result.added} нови видеа`, 'success');
+            await this.loadVideos();
+            await this.loadRssFeeds();
+
+        } catch (error) {
+            console.error('Error syncing RSS feed:', error);
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    async deleteRssFeed(feedId) {
+        if (!confirm('Сигурни ли сте, че искате да изтриете този RSS feed?')) {
+            return;
+        }
+
+        try {
+            await this.apiCall(`/rss/feeds/${feedId}`, {
+                method: 'DELETE'
+            });
+
+            this.showToast('Feed изтрит', 'success');
+            await this.loadRssFeeds();
+
+        } catch (error) {
+            console.error('Error deleting RSS feed:', error);
+        }
+    }
+
+    async syncAllRssFeeds() {
+        this.showLoading(true);
+        this.showToast('Синхронизирам всички feeds...', 'info');
+
+        try {
+            const result = await this.apiCall('/rss/feeds/sync-all', {
+                method: 'POST'
+            });
+
+            const successful = result.results.filter(r => r.success).length;
+            const totalAdded = result.results.reduce((sum, r) => sum + (r.added || 0), 0);
+
+            this.showToast(`Синхронизирани ${successful}/${result.total_feeds} feeds. Добавени ${totalAdded} видеа.`, 'success');
+            await this.loadVideos();
+            await this.loadRssFeeds();
+
+        } catch (error) {
+            console.error('Error syncing all RSS feeds:', error);
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    closeAddRssFeedModal() {
+        document.getElementById('addRssFeedModal').style.display = 'none';
+    }
+
     // ========== RECOMMENDATIONS METHODS ==========
 
     async loadRecommendations(videoId) {
@@ -1766,6 +1929,10 @@ function closeBookmarkModal() {
 
 function closeShortcutsModal() {
     document.getElementById('shortcutsModal').style.display = 'none';
+}
+
+function closeAddRssFeedModal() {
+    document.getElementById('addRssFeedModal').style.display = 'none';
 }
 
 // Initialize app when DOM is ready

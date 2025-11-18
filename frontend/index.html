@@ -77,6 +77,19 @@
 
             <div class="sidebar-section">
                 <div class="section-header">
+                    <h3>📡 RSS Feeds</h3>
+                    <button id="addRssFeedBtn" class="btn-icon" title="Add RSS Feed">➕</button>
+                </div>
+                <ul id="rssFeedsList" class="rss-feeds-list">
+                    <!-- RSS Feeds will be loaded here -->
+                </ul>
+                <button id="syncAllFeedsBtn" class="btn btn-secondary btn-small" style="width: 100%; margin-top: 0.5rem;">
+                    🔄 Sync All
+                </button>
+            </div>
+
+            <div class="sidebar-section">
+                <div class="section-header">
                     <h3>Колекции</h3>
                     <button id="createBoardBtn" class="btn-icon">➕</button>
                 </div>
@@ -518,6 +531,39 @@
                     <kbd>&lt; / &gt;</kbd>
                     <span>Decrease / Increase speed</span>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add RSS Feed Modal -->
+    <div id="addRssFeedModal" class="modal" style="display: none;">
+        <div class="modal-overlay" onclick="closeAddRssFeedModal()"></div>
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeAddRssFeedModal()">✕</button>
+            <h2>📡 Добави RSS Feed</h2>
+            <div class="rss-feed-form">
+                <div class="form-group">
+                    <label for="rssFeedUrlInput">RSS Feed URL:</label>
+                    <input type="url" id="rssFeedUrlInput" placeholder="https://www.youtube.com/feeds/videos.xml?channel_id=..." class="input-large">
+                    <p class="help-text">Поддържа YouTube канали, podcast RSS feeds, и video RSS feeds</p>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="rssAutoSyncInput" checked>
+                        Автоматична синхронизация
+                    </label>
+                </div>
+
+                <div class="rss-feed-examples">
+                    <p><strong>Примери:</strong></p>
+                    <ul>
+                        <li><strong>YouTube канал:</strong> https://www.youtube.com/feeds/videos.xml?channel_id=CHANNEL_ID</li>
+                        <li><strong>Podcast:</strong> https://example.com/podcast/feed.xml</li>
+                    </ul>
+                </div>
+
+                <button id="addRssFeedSubmitBtn" class="btn btn-primary">Добави Feed</button>
             </div>
         </div>
     </div>

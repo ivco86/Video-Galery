@@ -7,6 +7,7 @@ from youtube_manager import YouTubeManager
 from video_processor import VideoProcessor
 from subtitle_manager import SubtitleManager
 from ai_analyzer import AIAnalyzer
+from rss_manager import RSSManager
 from datetime import datetime
 import json
 
@@ -24,6 +25,7 @@ db = VideoDatabase('videos.db')
 youtube = YouTubeManager(api_key=YOUTUBE_API_KEY if YOUTUBE_API_KEY else None)
 video_processor = VideoProcessor(videos_folder=VIDEOS_FOLDER)
 ai_analyzer = AIAnalyzer(lm_studio_url=LM_STUDIO_URL)
+rss_manager = RSSManager()
 
 # Ensure directories exist
 os.makedirs(VIDEOS_FOLDER, exist_ok=True)
@@ -749,6 +751,189 @@ def delete_bookmark(bookmark_id):
         return jsonify({'success': True})
     else:
         return jsonify({'error': 'Bookmark not found'}), 404
+
+
+# ========== RSS FEED ENDPOINTS ==========
+
+@app.route('/api/rss/feeds', methods=['GET'])
+def get_rss_feeds():
+    """Get all RSS feeds"""
+    feeds = db.get_rss_feeds()
+    return jsonify(feeds)
+
+
+@app.route('/api/rss/feeds', methods=['POST'])
+def add_rss_feed():
+    """Add a new RSS feed"""
+    data = request.json
+    feed_url = data.get('url')
+
+    if not feed_url:
+        return jsonify({'error': 'Feed URL required'}), 400
+
+    try:
+        # Parse the feed to get metadata
+        feed_info = rss_manager.parse_feed(feed_url)
+
+        # Add to database
+        feed_data = {
+            'url': feed_url,
+            'title': feed_info.get('title', 'Unknown Feed'),
+            'description': feed_info.get('description', ''),
+            'auto_sync': data.get('auto_sync', True),
+            'sync_interval': data.get('sync_interval', 3600)
+        }
+
+        feed_id = db.add_rss_feed(feed_data)
+
+        if feed_id == -1:
+            return jsonify({'error': 'Feed already exists'}), 409
+
+        return jsonify({'success': True, 'feed_id': feed_id, 'feed_info': feed_info})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/rss/feeds/<int:feed_id>', methods=['GET'])
+def get_rss_feed(feed_id):
+    """Get a specific RSS feed"""
+    feed = db.get_rss_feed(feed_id)
+
+    if feed:
+        return jsonify(feed)
+    else:
+        return jsonify({'error': 'Feed not found'}), 404
+
+
+@app.route('/api/rss/feeds/<int:feed_id>', methods=['PUT'])
+def update_rss_feed(feed_id):
+    """Update RSS feed settings"""
+    updates = request.json
+
+    success = db.update_rss_feed(feed_id, updates)
+
+    if success:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': 'Feed not found'}), 404
+
+
+@app.route('/api/rss/feeds/<int:feed_id>', methods=['DELETE'])
+def delete_rss_feed(feed_id):
+    """Delete an RSS feed"""
+    success = db.delete_rss_feed(feed_id)
+
+    if success:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': 'Feed not found'}), 404
+
+
+@app.route('/api/rss/feeds/<int:feed_id>/sync', methods=['POST'])
+def sync_rss_feed(feed_id):
+    """Sync videos from a specific RSS feed"""
+    feed = db.get_rss_feed(feed_id)
+
+    if not feed:
+        return jsonify({'error': 'Feed not found'}), 404
+
+    try:
+        # Parse the feed
+        feed_info = rss_manager.parse_feed(feed['url'])
+
+        added_count = 0
+        skipped_count = 0
+
+        # Process each entry
+        for entry in feed_info.get('entries', []):
+            # Check if video already exists
+            if db.get_video(entry['video_id']):
+                skipped_count += 1
+                continue
+
+            # Add video to database
+            video_id = db.add_video(entry)
+
+            if video_id:
+                added_count += 1
+
+                # Download subtitles for YouTube videos
+                if entry.get('source') == 'youtube':
+                    try:
+                        subtitles = youtube.download_subtitles(entry['video_id'])
+
+                        for lang, sub_info in subtitles.items():
+                            converted_subs = SubtitleManager.convert_youtube_transcript(sub_info['data'])
+                            full_text = SubtitleManager.get_full_text(converted_subs)
+
+                            db.add_subtitle({
+                                'video_id': entry['video_id'],
+                                'language': lang,
+                                'content': full_text,
+                                'source': 'youtube'
+                            })
+                    except:
+                        pass  # Continue even if subtitles fail
+
+        # Update feed sync time and video count
+        db.update_feed_sync_time(feed_id, added_count)
+
+        return jsonify({
+            'success': True,
+            'added': added_count,
+            'skipped': skipped_count,
+            'total': len(feed_info.get('entries', []))
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/rss/feeds/sync-all', methods=['POST'])
+def sync_all_rss_feeds():
+    """Sync all RSS feeds that have auto_sync enabled"""
+    feeds = db.get_rss_feeds()
+    results = []
+
+    for feed in feeds:
+        if not feed.get('auto_sync'):
+            continue
+
+        try:
+            feed_info = rss_manager.parse_feed(feed['url'])
+            added_count = 0
+
+            for entry in feed_info.get('entries', []):
+                if db.get_video(entry['video_id']):
+                    continue
+
+                video_id = db.add_video(entry)
+                if video_id:
+                    added_count += 1
+
+            db.update_feed_sync_time(feed['id'], added_count)
+
+            results.append({
+                'feed_id': feed['id'],
+                'feed_title': feed['title'],
+                'added': added_count,
+                'success': True
+            })
+
+        except Exception as e:
+            results.append({
+                'feed_id': feed['id'],
+                'feed_title': feed['title'],
+                'error': str(e),
+                'success': False
+            })
+
+    return jsonify({
+        'success': True,
+        'results': results,
+        'total_feeds': len(feeds)
+    })
 
 
 # ========== ERROR HANDLERS ==========
