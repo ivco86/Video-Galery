@@ -1045,6 +1045,76 @@ def get_recent_notes():
     return jsonify({'notes': notes})
 
 
+# ========== ANALYTICS ENDPOINTS ==========
+
+@app.route('/api/analytics/statistics', methods=['GET'])
+def get_analytics_statistics():
+    """Get overall watch statistics"""
+    days = request.args.get('days', 30, type=int)
+    stats = db.get_watch_statistics(days)
+    return jsonify(stats)
+
+
+@app.route('/api/analytics/top-videos', methods=['GET'])
+def get_top_videos():
+    """Get most watched videos"""
+    limit = request.args.get('limit', 10, type=int)
+    days = request.args.get('days', 30, type=int)
+    videos = db.get_top_watched_videos(limit, days)
+    return jsonify({'videos': videos})
+
+
+@app.route('/api/analytics/activity', methods=['GET'])
+def get_watch_activity():
+    """Get daily watch activity"""
+    days = request.args.get('days', 30, type=int)
+    activity = db.get_watch_activity_by_day(days)
+    return jsonify({'activity': activity})
+
+
+@app.route('/api/analytics/by-source', methods=['GET'])
+def get_stats_by_source():
+    """Get watch stats grouped by video source"""
+    days = request.args.get('days', 30, type=int)
+    stats = db.get_watch_stats_by_source(days)
+    return jsonify({'stats': stats})
+
+
+@app.route('/api/analytics/by-channel', methods=['GET'])
+def get_stats_by_channel():
+    """Get watch stats grouped by channel"""
+    limit = request.args.get('limit', 10, type=int)
+    days = request.args.get('days', 30, type=int)
+    stats = db.get_watch_stats_by_channel(limit, days)
+    return jsonify({'stats': stats})
+
+
+@app.route('/api/analytics/record-session', methods=['POST'])
+def record_session():
+    """Record a watch session for analytics"""
+    data = request.json
+
+    session_data = {
+        'video_id': data.get('video_id'),
+        'start_time': data.get('start_time'),
+        'end_time': data.get('end_time'),
+        'duration_watched': data.get('duration_watched', 0),
+        'video_progress_start': data.get('video_progress_start', 0),
+        'video_progress_end': data.get('video_progress_end', 0),
+        'completed': data.get('completed', False)
+    }
+
+    if not session_data['video_id']:
+        return jsonify({'error': 'video_id is required'}), 400
+
+    session_id = db.record_watch_session(session_data)
+
+    return jsonify({
+        'success': True,
+        'session_id': session_id
+    }), 201
+
+
 # ========== ERROR HANDLERS ==========
 
 @app.errorhandler(404)

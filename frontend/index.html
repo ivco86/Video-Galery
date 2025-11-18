@@ -110,6 +110,9 @@
                         <span id="totalBoards" class="stat-value">0</span>
                     </div>
                 </div>
+                <button id="openAnalyticsBtn" class="btn btn-primary btn-small" style="width: 100%; margin-top: 0.75rem;">
+                    📊 Аналитика
+                </button>
             </div>
         </aside>
 
@@ -660,6 +663,91 @@
                 </div>
 
                 <button id="saveBookmarkBtn" class="btn btn-primary">Запази</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analytics Dashboard Modal -->
+    <div id="analyticsModal" class="modal" style="display: none;">
+        <div class="modal-overlay" onclick="closeAnalyticsModal()"></div>
+        <div class="modal-content analytics-modal-content">
+            <button class="modal-close" onclick="closeAnalyticsModal()">✕</button>
+            <h2>📊 Аналитика за гледания</h2>
+
+            <!-- Time Period Filter -->
+            <div class="analytics-filters">
+                <label for="analyticsPeriodSelect">Период:</label>
+                <select id="analyticsPeriodSelect" class="analytics-period-select">
+                    <option value="7">Последни 7 дни</option>
+                    <option value="30" selected>Последни 30 дни</option>
+                    <option value="90">Последни 90 дни</option>
+                    <option value="365">Последната година</option>
+                </select>
+                <button id="refreshAnalyticsBtn" class="btn btn-secondary">🔄 Обнови</button>
+            </div>
+
+            <!-- Overview Stats -->
+            <div class="analytics-overview">
+                <div class="analytics-stat-card">
+                    <div class="stat-icon">⏱️</div>
+                    <div class="stat-info">
+                        <div class="stat-label">Общо време</div>
+                        <div class="stat-value" id="analyticsТotalTime">-</div>
+                    </div>
+                </div>
+                <div class="analytics-stat-card">
+                    <div class="stat-icon">🎬</div>
+                    <div class="stat-info">
+                        <div class="stat-label">Видеа гледани</div>
+                        <div class="stat-value" id="analyticsVideosWatched">-</div>
+                    </div>
+                </div>
+                <div class="analytics-stat-card">
+                    <div class="stat-icon">✅</div>
+                    <div class="stat-info">
+                        <div class="stat-label">Завършени</div>
+                        <div class="stat-value" id="analyticsCompleted">-</div>
+                    </div>
+                </div>
+                <div class="analytics-stat-card">
+                    <div class="stat-icon">📊</div>
+                    <div class="stat-info">
+                        <div class="stat-label">Средно време</div>
+                        <div class="stat-value" id="analyticsAvgTime">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Activity Chart -->
+            <div class="analytics-section">
+                <h3>Активност по дни</h3>
+                <div id="activityChart" class="activity-chart">
+                    <!-- Chart will be rendered here -->
+                </div>
+            </div>
+
+            <!-- Top Videos -->
+            <div class="analytics-section">
+                <h3>Най-гледани видеа</h3>
+                <div id="topVideosChart" class="top-videos-list">
+                    <!-- Top videos will be rendered here -->
+                </div>
+            </div>
+
+            <!-- Stats by Source -->
+            <div class="analytics-section">
+                <h3>По източник</h3>
+                <div id="sourceStatsChart" class="source-stats">
+                    <!-- Source stats will be rendered here -->
+                </div>
+            </div>
+
+            <!-- Stats by Channel -->
+            <div class="analytics-section">
+                <h3>По канал</h3>
+                <div id="channelStatsChart" class="channel-stats">
+                    <!-- Channel stats will be rendered here -->
+                </div>
             </div>
         </div>
     </div>

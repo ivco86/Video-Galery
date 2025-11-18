@@ -181,6 +181,21 @@ class VideoDatabase:
             )
         ''')
 
+        # Watch Sessions table for detailed analytics
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS watch_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                video_id TEXT NOT NULL,
+                start_time TEXT,
+                end_time TEXT,
+                duration_watched INTEGER DEFAULT 0,
+                video_progress_start INTEGER DEFAULT 0,
+                video_progress_end INTEGER DEFAULT 0,
+                completed BOOLEAN DEFAULT 0,
+                FOREIGN KEY (video_id) REFERENCES videos(video_id) ON DELETE CASCADE
+            )
+        ''')
+
         conn.commit()
         conn.close()
 
@@ -1253,3 +1268,203 @@ class VideoDatabase:
         conn.close()
 
         return notes
+
+    # Analytics operations
+    def record_watch_session(self, session_data: Dict[str, Any]) -> int:
+        """Record a watch session for analytics"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            INSERT INTO watch_sessions (
+                video_id, start_time, end_time, duration_watched,
+                video_progress_start, video_progress_end, completed
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            session_data.get('video_id'),
+            session_data.get('start_time', datetime.now().isoformat()),
+            session_data.get('end_time', datetime.now().isoformat()),
+            session_data.get('duration_watched', 0),
+            session_data.get('video_progress_start', 0),
+            session_data.get('video_progress_end', 0),
+            session_data.get('completed', False)
+        ))
+
+        conn.commit()
+        session_id = cursor.lastrowid
+        conn.close()
+
+        return session_id
+
+    def get_watch_statistics(self, days: int = 30) -> Dict:
+        """Get overall watch statistics for the last N days"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        from_date = (datetime.now() - __import__('datetime').timedelta(days=days)).isoformat()
+
+        # Total watch time
+        cursor.execute('''
+            SELECT SUM(duration_watched) as total_seconds
+            FROM watch_sessions
+            WHERE start_time >= ?
+        ''', (from_date,))
+        total_time = cursor.fetchone()['total_seconds'] or 0
+
+        # Total videos watched
+        cursor.execute('''
+            SELECT COUNT(DISTINCT video_id) as video_count
+            FROM watch_sessions
+            WHERE start_time >= ?
+        ''', (from_date,))
+        total_videos = cursor.fetchone()['video_count'] or 0
+
+        # Total sessions
+        cursor.execute('''
+            SELECT COUNT(*) as session_count
+            FROM watch_sessions
+            WHERE start_time >= ?
+        ''', (from_date,))
+        total_sessions = cursor.fetchone()['session_count'] or 0
+
+        # Completed videos
+        cursor.execute('''
+            SELECT COUNT(*) as completed_count
+            FROM watch_sessions
+            WHERE start_time >= ? AND completed = 1
+        ''', (from_date,))
+        completed_count = cursor.fetchone()['completed_count'] or 0
+
+        # Average watch time per session
+        avg_session_time = total_time / total_sessions if total_sessions > 0 else 0
+
+        conn.close()
+
+        return {
+            'total_watch_time_seconds': total_time,
+            'total_videos_watched': total_videos,
+            'total_sessions': total_sessions,
+            'completed_videos': completed_count,
+            'average_session_time_seconds': int(avg_session_time),
+            'days': days
+        }
+
+    def get_top_watched_videos(self, limit: int = 10, days: int = 30) -> List[Dict]:
+        """Get most watched videos in the last N days"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        from_date = (datetime.now() - __import__('datetime').timedelta(days=days)).isoformat()
+
+        cursor.execute('''
+            SELECT
+                v.*,
+                COUNT(ws.id) as session_count,
+                SUM(ws.duration_watched) as total_watch_time,
+                AVG(ws.duration_watched) as avg_watch_time
+            FROM videos v
+            JOIN watch_sessions ws ON v.video_id = ws.video_id
+            WHERE ws.start_time >= ?
+            GROUP BY v.video_id
+            ORDER BY total_watch_time DESC
+            LIMIT ?
+        ''', (from_date, limit))
+
+        videos = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        # Parse JSON fields
+        for video in videos:
+            if video.get('tags'):
+                try:
+                    video['tags'] = json.loads(video['tags'])
+                except:
+                    video['tags'] = []
+            if video.get('ai_tags'):
+                try:
+                    video['ai_tags'] = json.loads(video['ai_tags'])
+                except:
+                    video['ai_tags'] = []
+
+        return videos
+
+    def get_watch_activity_by_day(self, days: int = 30) -> List[Dict]:
+        """Get daily watch activity for the last N days"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        from_date = (datetime.now() - __import__('datetime').timedelta(days=days)).isoformat()
+
+        cursor.execute('''
+            SELECT
+                DATE(start_time) as date,
+                COUNT(*) as session_count,
+                COUNT(DISTINCT video_id) as unique_videos,
+                SUM(duration_watched) as total_watch_time,
+                SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) as completed_count
+            FROM watch_sessions
+            WHERE start_time >= ?
+            GROUP BY DATE(start_time)
+            ORDER BY date DESC
+        ''', (from_date,))
+
+        activity = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return activity
+
+    def get_watch_stats_by_source(self, days: int = 30) -> List[Dict]:
+        """Get watch statistics grouped by video source"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        from_date = (datetime.now() - __import__('datetime').timedelta(days=days)).isoformat()
+
+        cursor.execute('''
+            SELECT
+                v.source,
+                COUNT(ws.id) as session_count,
+                COUNT(DISTINCT ws.video_id) as unique_videos,
+                SUM(ws.duration_watched) as total_watch_time
+            FROM watch_sessions ws
+            JOIN videos v ON ws.video_id = v.video_id
+            WHERE ws.start_time >= ?
+            GROUP BY v.source
+            ORDER BY total_watch_time DESC
+        ''', (from_date,))
+
+        stats = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return stats
+
+    def get_watch_stats_by_channel(self, limit: int = 10, days: int = 30) -> List[Dict]:
+        """Get watch statistics grouped by channel"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        from_date = (datetime.now() - __import__('datetime').timedelta(days=days)).isoformat()
+
+        cursor.execute('''
+            SELECT
+                v.channel_name,
+                COUNT(ws.id) as session_count,
+                COUNT(DISTINCT ws.video_id) as unique_videos,
+                SUM(ws.duration_watched) as total_watch_time
+            FROM watch_sessions ws
+            JOIN videos v ON ws.video_id = v.video_id
+            WHERE ws.start_time >= ? AND v.channel_name IS NOT NULL
+            GROUP BY v.channel_name
+            ORDER BY total_watch_time DESC
+            LIMIT ?
+        ''', (from_date, limit))
+
+        stats = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return stats

@@ -327,6 +327,22 @@ class VideoGallery {
             syncAllFeedsBtn.addEventListener('click', () => this.syncAllRssFeeds());
         }
 
+        // Analytics
+        const openAnalyticsBtn = document.getElementById('openAnalyticsBtn');
+        if (openAnalyticsBtn) {
+            openAnalyticsBtn.addEventListener('click', () => this.openAnalyticsModal());
+        }
+
+        const refreshAnalyticsBtn = document.getElementById('refreshAnalyticsBtn');
+        if (refreshAnalyticsBtn) {
+            refreshAnalyticsBtn.addEventListener('click', () => this.loadAnalytics());
+        }
+
+        const analyticsPeriodSelect = document.getElementById('analyticsPeriodSelect');
+        if (analyticsPeriodSelect) {
+            analyticsPeriodSelect.addEventListener('change', () => this.loadAnalytics());
+        }
+
         // Keyboard shortcuts (global)
         document.addEventListener('keydown', (e) => this.handleKeyPress(e));
     }
@@ -2212,6 +2228,206 @@ class VideoGallery {
             container.appendChild(card);
         });
     }
+
+    // ========== ANALYTICS METHODS ==========
+
+    openAnalyticsModal() {
+        const modal = document.getElementById('analyticsModal');
+        modal.style.display = 'flex';
+        this.loadAnalytics();
+    }
+
+    closeAnalyticsModal() {
+        const modal = document.getElementById('analyticsModal');
+        modal.style.display = 'none';
+    }
+
+    async loadAnalytics() {
+        const periodSelect = document.getElementById('analyticsPeriodSelect');
+        const days = parseInt(periodSelect.value) || 30;
+
+        try {
+            // Load overview statistics
+            const stats = await this.apiCall(`/analytics/statistics?days=${days}`);
+            this.renderAnalyticsOverview(stats);
+
+            // Load activity chart
+            const activity = await this.apiCall(`/analytics/activity?days=${days}`);
+            this.renderActivityChart(activity.activity);
+
+            // Load top videos
+            const topVideos = await this.apiCall(`/analytics/top-videos?days=${days}&limit=10`);
+            this.renderTopVideos(topVideos.videos);
+
+            // Load stats by source
+            const sourceStats = await this.apiCall(`/analytics/by-source?days=${days}`);
+            this.renderSourceStats(sourceStats.stats);
+
+            // Load stats by channel
+            const channelStats = await this.apiCall(`/analytics/by-channel?days=${days}&limit=10`);
+            this.renderChannelStats(channelStats.stats);
+
+        } catch (error) {
+            console.error('Error loading analytics:', error);
+        }
+    }
+
+    renderAnalyticsOverview(stats) {
+        // Total watch time
+        const totalTimeEl = document.getElementById('analyticsТotalTime');
+        const hours = Math.floor(stats.total_watch_time_seconds / 3600);
+        const minutes = Math.floor((stats.total_watch_time_seconds % 3600) / 60);
+        totalTimeEl.textContent = hours > 0 ? `${hours}ч ${minutes}м` : `${minutes}м`;
+
+        // Videos watched
+        document.getElementById('analyticsVideosWatched').textContent = stats.total_videos_watched;
+
+        // Completed videos
+        document.getElementById('analyticsCompleted').textContent = stats.completed_videos;
+
+        // Average session time
+        const avgTimeEl = document.getElementById('analyticsAvgTime');
+        const avgMinutes = Math.floor(stats.average_session_time_seconds / 60);
+        avgTimeEl.textContent = `${avgMinutes}м`;
+    }
+
+    renderActivityChart(activity) {
+        const container = document.getElementById('activityChart');
+
+        if (!activity || activity.length === 0) {
+            container.innerHTML = '<p class="empty-message">Няма данни за активност</p>';
+            return;
+        }
+
+        // Find max value for scaling
+        const maxTime = Math.max(...activity.map(a => a.total_watch_time || 0));
+
+        container.innerHTML = '';
+
+        // Reverse to show oldest first
+        const sortedActivity = [...activity].reverse();
+
+        sortedActivity.forEach(day => {
+            const bar = document.createElement('div');
+            bar.className = 'activity-bar';
+
+            const height = maxTime > 0 ? (day.total_watch_time / maxTime) * 100 : 0;
+            const minutes = Math.floor(day.total_watch_time / 60);
+
+            bar.innerHTML = `
+                <div class="bar-fill" style="height: ${height}%"></div>
+                <div class="bar-label">${new Date(day.date).toLocaleDateString('bg-BG', { month: 'short', day: 'numeric' })}</div>
+                <div class="bar-tooltip">${minutes}м - ${day.unique_videos} видеа</div>
+            `;
+
+            container.appendChild(bar);
+        });
+    }
+
+    renderTopVideos(videos) {
+        const container = document.getElementById('topVideosChart');
+
+        if (!videos || videos.length === 0) {
+            container.innerHTML = '<p class="empty-message">Няма данни</p>';
+            return;
+        }
+
+        const maxTime = Math.max(...videos.map(v => v.total_watch_time || 0));
+
+        container.innerHTML = '';
+
+        videos.forEach((video, index) => {
+            const item = document.createElement('div');
+            item.className = 'top-video-item';
+
+            const percentage = maxTime > 0 ? (video.total_watch_time / maxTime) * 100 : 0;
+            const hours = Math.floor(video.total_watch_time / 3600);
+            const minutes = Math.floor((video.total_watch_time % 3600) / 60);
+            const timeStr = hours > 0 ? `${hours}ч ${minutes}м` : `${minutes}м`;
+
+            item.innerHTML = `
+                <div class="top-video-rank">${index + 1}</div>
+                <div class="top-video-info">
+                    <div class="top-video-title">${this.escapeHtml(video.title)}</div>
+                    <div class="top-video-stats">${timeStr} • ${video.session_count} гледания</div>
+                </div>
+                <div class="top-video-bar">
+                    <div class="top-video-fill" style="width: ${percentage}%"></div>
+                </div>
+            `;
+
+            container.appendChild(item);
+        });
+    }
+
+    renderSourceStats(stats) {
+        const container = document.getElementById('sourceStatsChart');
+
+        if (!stats || stats.length === 0) {
+            container.innerHTML = '<p class="empty-message">Няма данни</p>';
+            return;
+        }
+
+        const totalTime = stats.reduce((sum, s) => sum + (s.total_watch_time || 0), 0);
+
+        container.innerHTML = '';
+
+        stats.forEach(stat => {
+            const item = document.createElement('div');
+            item.className = 'source-stat-item';
+
+            const percentage = totalTime > 0 ? ((stat.total_watch_time / totalTime) * 100).toFixed(1) : 0;
+            const hours = Math.floor(stat.total_watch_time / 3600);
+            const minutes = Math.floor((stat.total_watch_time % 3600) / 60);
+            const timeStr = hours > 0 ? `${hours}ч ${minutes}м` : `${minutes}м`;
+
+            const sourceLabel = stat.source === 'youtube' ? '📺 YouTube' :
+                              stat.source === 'local' ? '📁 Локални' : stat.source;
+
+            item.innerHTML = `
+                <div class="source-label">${sourceLabel}</div>
+                <div class="source-bar">
+                    <div class="source-fill" style="width: ${percentage}%"></div>
+                </div>
+                <div class="source-stats">${timeStr} (${percentage}%)</div>
+            `;
+
+            container.appendChild(item);
+        });
+    }
+
+    renderChannelStats(stats) {
+        const container = document.getElementById('channelStatsChart');
+
+        if (!stats || stats.length === 0) {
+            container.innerHTML = '<p class="empty-message">Няма данни</p>';
+            return;
+        }
+
+        const maxTime = Math.max(...stats.map(s => s.total_watch_time || 0));
+
+        container.innerHTML = '';
+
+        stats.forEach(stat => {
+            const item = document.createElement('div');
+            item.className = 'channel-stat-item';
+
+            const percentage = maxTime > 0 ? (stat.total_watch_time / maxTime) * 100 : 0;
+            const hours = Math.floor(stat.total_watch_time / 3600);
+            const minutes = Math.floor((stat.total_watch_time % 3600) / 60);
+            const timeStr = hours > 0 ? `${hours}ч ${minutes}м` : `${minutes}м`;
+
+            item.innerHTML = `
+                <div class="channel-name">${this.escapeHtml(stat.channel_name)}</div>
+                <div class="channel-bar">
+                    <div class="channel-fill" style="width: ${percentage}%"></div>
+                </div>
+                <div class="channel-stats">${timeStr} • ${stat.unique_videos} видеа</div>
+            `;
+
+            container.appendChild(item);
+        });
+    }
 }
 
 // Modal close functions (global)
@@ -2258,6 +2474,12 @@ function closeShortcutsModal() {
 
 function closeAddRssFeedModal() {
     document.getElementById('addRssFeedModal').style.display = 'none';
+}
+
+function closeAnalyticsModal() {
+    if (window.app) {
+        window.app.closeAnalyticsModal();
+    }
 }
 
 // Initialize app when DOM is ready
