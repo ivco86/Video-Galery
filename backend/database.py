@@ -879,3 +879,111 @@ class VideoDatabase:
         conn.close()
 
         return affected > 0
+
+    # Recommendation operations
+    def get_similar_videos(self, video_id: str, limit: int = 10) -> List[Dict]:
+        """Get similar videos based on tags, channel, and content analysis"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Get the source video
+        cursor.execute('SELECT * FROM videos WHERE video_id = ?', (video_id,))
+        source_video = cursor.fetchone()
+
+        if not source_video:
+            conn.close()
+            return []
+
+        source_video = dict(source_video)
+
+        # Parse source video tags
+        source_tags = []
+        source_ai_tags = []
+
+        if source_video.get('tags'):
+            try:
+                source_tags = json.loads(source_video['tags']) if isinstance(source_video['tags'], str) else source_video['tags']
+            except:
+                source_tags = []
+
+        if source_video.get('ai_tags'):
+            try:
+                source_ai_tags = json.loads(source_video['ai_tags']) if isinstance(source_video['ai_tags'], str) else source_video['ai_tags']
+            except:
+                source_ai_tags = []
+
+        # Get all other videos
+        cursor.execute('SELECT * FROM videos WHERE video_id != ? ORDER BY added_date DESC', (video_id,))
+        all_videos = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        # Calculate similarity scores
+        scored_videos = []
+
+        for video in all_videos:
+            score = 0
+
+            # Parse video tags
+            video_tags = []
+            video_ai_tags = []
+
+            if video.get('tags'):
+                try:
+                    video_tags = json.loads(video['tags']) if isinstance(video['tags'], str) else video['tags']
+                except:
+                    video_tags = []
+
+            if video.get('ai_tags'):
+                try:
+                    video_ai_tags = json.loads(video['ai_tags']) if isinstance(video['ai_tags'], str) else video['ai_tags']
+                except:
+                    video_ai_tags = []
+
+            # Same channel = +30 points
+            if source_video.get('channel_name') and video.get('channel_name'):
+                if source_video['channel_name'].lower() == video['channel_name'].lower():
+                    score += 30
+
+            # Shared regular tags = +10 points each
+            if source_tags and video_tags:
+                common_tags = set([t.lower() for t in source_tags]) & set([t.lower() for t in video_tags])
+                score += len(common_tags) * 10
+
+            # Shared AI tags = +15 points each (weighted more heavily)
+            if source_ai_tags and video_ai_tags:
+                common_ai_tags = set([t.lower() for t in source_ai_tags]) & set([t.lower() for t in video_ai_tags])
+                score += len(common_ai_tags) * 15
+
+            # Title similarity (simple word overlap) = +5 points per common word
+            if source_video.get('title') and video.get('title'):
+                source_words = set(source_video['title'].lower().split())
+                video_words = set(video['title'].lower().split())
+                common_words = source_words & video_words
+                # Exclude common words like 'the', 'a', 'and', etc.
+                stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'be', 'been', 'being'}
+                common_words = common_words - stop_words
+                score += len(common_words) * 5
+
+            # Same source = +10 points
+            if source_video.get('source') == video.get('source'):
+                score += 10
+
+            # Boost for favorites
+            if video.get('is_favorite'):
+                score += 5
+
+            # Boost for recently watched
+            if video.get('watch_count', 0) > 0:
+                score += min(video['watch_count'] * 2, 10)
+
+            # Only include videos with score > 0
+            if score > 0:
+                video['similarity_score'] = score
+                scored_videos.append(video)
+
+        # Sort by score descending
+        scored_videos.sort(key=lambda x: x['similarity_score'], reverse=True)
+
+        # Return top N videos
+        return scored_videos[:limit]

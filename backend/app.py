@@ -666,6 +666,22 @@ def save_video_progress(video_id):
     return jsonify({'success': True, 'history_id': history_id})
 
 
+# ========== RECOMMENDATIONS ENDPOINTS ==========
+
+@app.route('/api/videos/<video_id>/recommendations', methods=['GET'])
+def get_video_recommendations(video_id):
+    """Get recommended videos based on similarity"""
+    limit = request.args.get('limit', 10, type=int)
+
+    recommendations = db.get_similar_videos(video_id, limit=limit)
+
+    return jsonify({
+        'video_id': video_id,
+        'recommendations': recommendations,
+        'count': len(recommendations)
+    })
+
+
 # ========== BOOKMARK ENDPOINTS ==========
 
 @app.route('/api/videos/<video_id>/bookmarks', methods=['GET'])

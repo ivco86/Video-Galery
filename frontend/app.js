@@ -388,6 +388,9 @@ class VideoGallery {
         // Load bookmarks
         await this.loadBookmarks(video.video_id);
 
+        // Load recommendations
+        await this.loadRecommendations(video.video_id);
+
         // Mark as watched
         this.apiCall(`/videos/${video.video_id}/watch`, { method: 'POST' });
 
@@ -1322,6 +1325,67 @@ class VideoGallery {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // ========== RECOMMENDATIONS METHODS ==========
+
+    async loadRecommendations(videoId) {
+        try {
+            const result = await this.apiCall(`/videos/${videoId}/recommendations?limit=6`);
+            this.renderRecommendations(result.recommendations || []);
+        } catch (error) {
+            console.error('Error loading recommendations:', error);
+            this.renderRecommendations([]);
+        }
+    }
+
+    renderRecommendations(recommendations) {
+        const container = document.getElementById('recommendationsList');
+
+        if (!recommendations || recommendations.length === 0) {
+            container.innerHTML = '<p class="empty-message">Няма намерени свързани видеа</p>';
+            return;
+        }
+
+        container.innerHTML = '';
+
+        recommendations.forEach(video => {
+            const card = document.createElement('div');
+            card.className = 'recommendation-card';
+            card.onclick = () => {
+                closeVideoModal();
+                setTimeout(() => this.playVideo(video), 100);
+            };
+
+            const thumbnail = video.thumbnail_url || '/api/thumbnails/default.jpg';
+            const duration = this.formatDuration(video.duration);
+            const score = video.similarity_score || 0;
+
+            // Determine reason for recommendation
+            let reason = '';
+            if (score >= 30) {
+                reason = '📺 Същ канал';
+            } else if (score >= 20) {
+                reason = '🏷️ Споделени тагове';
+            } else if (score >= 10) {
+                reason = '🔗 Сходно съдържание';
+            }
+
+            card.innerHTML = `
+                <div class="recommendation-thumbnail">
+                    <img src="${thumbnail}" alt="${this.escapeHtml(video.title)}">
+                    <span class="video-duration-badge">${duration}</span>
+                    ${score > 0 ? `<span class="similarity-badge">${score}</span>` : ''}
+                </div>
+                <div class="recommendation-info">
+                    <h4 class="recommendation-title">${this.escapeHtml(video.title)}</h4>
+                    <p class="recommendation-channel">${this.escapeHtml(video.channel_name || 'Unknown')}</p>
+                    ${reason ? `<span class="recommendation-reason">${reason}</span>` : ''}
+                </div>
+            `;
+
+            container.appendChild(card);
+        });
     }
 }
 
