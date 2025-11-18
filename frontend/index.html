@@ -116,6 +116,9 @@
                 <button id="openDownloadsBtn" class="btn btn-secondary btn-small" style="width: 100%; margin-top: 0.5rem;">
                     📥 Downloads
                 </button>
+                <button id="openSmartCollectionsBtn" class="btn btn-secondary btn-small" style="width: 100%; margin-top: 0.5rem;">
+                    🏷️ Smart Collections
+                </button>
             </div>
         </aside>
 
@@ -258,6 +261,7 @@
                     <button id="addToPlaylistBtn" class="btn btn-icon">▶️ Добави в плейлист</button>
                     <button id="addToBoardBtn" class="btn btn-icon">➕ Добави в колекция</button>
                     <button id="downloadVideoBtn" class="btn btn-icon">📥 Download</button>
+                    <button id="autoTagBtn" class="btn btn-icon">🏷️ Auto-Tag</button>
                     <button id="analyzeBtn" class="btn btn-icon">🤖 AI Анализ</button>
                 </div>
 
@@ -832,6 +836,91 @@
                     <span class="quality-label">Само аудио</span>
                     <span class="quality-desc">MP3/M4A формат</span>
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Smart Collections Modal -->
+    <div id="smartCollectionsModal" class="modal" style="display: none;">
+        <div class="modal-overlay" onclick="closeSmartCollectionsModal()"></div>
+        <div class="modal-content smart-collections-modal">
+            <button class="modal-close" onclick="closeSmartCollectionsModal()">✕</button>
+            <h2>🏷️ Smart Collections</h2>
+
+            <button id="createSmartCollectionBtn" class="btn btn-primary" style="margin-bottom: 1rem;">➕ Създай Smart Collection</button>
+
+            <div id="smartCollectionsList" class="smart-collections-list"></div>
+        </div>
+    </div>
+
+    <!-- Create Smart Collection Modal -->
+    <div id="createSmartCollectionModal" class="modal" style="display: none;">
+        <div class="modal-overlay" onclick="closeCreateSmartCollectionModal()"></div>
+        <div class="modal-content create-smart-collection-modal">
+            <button class="modal-close" onclick="closeCreateSmartCollectionModal()">✕</button>
+            <h2>📁 Създай Smart Collection</h2>
+            <div class="smart-collection-form">
+                <div class="form-group">
+                    <label>Име:</label>
+                    <input type="text" id="smartCollectionName" placeholder="Например: Tech Videos">
+                </div>
+                <div class="form-group">
+                    <label>Описание:</label>
+                    <textarea id="smartCollectionDescription" placeholder="Опционално описание на колекцията"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Филтър по тагове:</label>
+                    <div id="tagsSelector" class="tags-selector"></div>
+                </div>
+                <div class="form-group">
+                    <label>Канал:</label>
+                    <input type="text" id="smartCollectionChannel" placeholder="Име на канал (опционално)">
+                </div>
+                <div class="form-group">
+                    <label>Източник:</label>
+                    <select id="smartCollectionSource">
+                        <option value="">Всички</option>
+                        <option value="youtube">YouTube</option>
+                        <option value="local">Локални</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Мин. продължителност (мин):</label>
+                        <input type="number" id="smartCollectionMinDuration" min="0" placeholder="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Макс. продължителност (мин):</label>
+                        <input type="number" id="smartCollectionMaxDuration" min="0" placeholder="∞">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Добавени от дата:</label>
+                        <input type="date" id="smartCollectionDateFrom">
+                    </div>
+                    <div class="form-group">
+                        <label>Добавени до дата:</label>
+                        <input type="date" id="smartCollectionDateTo">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="smartCollectionFavorites"> Само любими видеа</label>
+                </div>
+                <div class="picker-row">
+                    <div class="form-group">
+                        <label>Цвят:</label>
+                        <input type="color" id="smartCollectionColor" value="#10B981">
+                    </div>
+                    <div class="form-group">
+                        <label>Икона (emoji):</label>
+                        <input type="text" id="smartCollectionIcon" value="📁" maxlength="2" placeholder="📁">
+                    </div>
+                </div>
+                <div class="smart-collection-form-actions">
+                    <button onclick="closeCreateSmartCollectionModal()" class="btn btn-secondary">Отказ</button>
+                    <button id="saveSmartCollectionBtn" class="btn btn-primary">💾 Запази колекция</button>
+                </div>
             </div>
         </div>
     </div>

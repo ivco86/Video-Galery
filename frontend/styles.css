@@ -2636,3 +2636,296 @@ kbd {
         align-self: flex-end;
     }
 }
+
+/* ========== SMART COLLECTIONS & TAGS ========== */
+
+/* Smart Collections Modal */
+.smart-collections-modal {
+    width: 90%;
+    max-width: 900px;
+    max-height: 85vh;
+    overflow-y: auto;
+    background: var(--bg-primary);
+    border-radius: 12px;
+    padding: 2rem;
+}
+
+.smart-collections-modal h2 {
+    margin-bottom: 1.5rem;
+    color: var(--text-primary);
+    font-size: 1.75rem;
+}
+
+.smart-collections-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+
+.smart-collection-item {
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    padding: 1.25rem;
+    transition: all 0.3s ease;
+}
+
+.smart-collection-item:hover {
+    transform: translateX(4px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.smart-collection-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+
+.smart-collection-info {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    flex: 1;
+}
+
+.smart-collection-icon {
+    font-size: 2rem;
+    line-height: 1;
+}
+
+.smart-collection-info h3 {
+    margin: 0 0 0.5rem 0;
+    color: var(--text-primary);
+    font-size: 1.25rem;
+}
+
+.smart-collection-desc {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+.smart-collection-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.video-count {
+    padding: 0.25rem 0.75rem;
+    background: var(--accent-primary);
+    color: white;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.smart-collection-rules {
+    padding: 0.75rem 1rem;
+    background: var(--bg-primary);
+    border-radius: 6px;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+/* Create Smart Collection Modal */
+.create-smart-collection-modal {
+    width: 90%;
+    max-width: 700px;
+    max-height: 90vh;
+    overflow-y: auto;
+    background: var(--bg-primary);
+    border-radius: 12px;
+    padding: 2rem;
+}
+
+.create-smart-collection-modal h2 {
+    margin-bottom: 1.5rem;
+    color: var(--text-primary);
+    font-size: 1.5rem;
+}
+
+.smart-collection-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.smart-collection-form .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.smart-collection-form label {
+    color: var(--text-primary);
+    font-weight: 500;
+    font-size: 0.95rem;
+}
+
+.smart-collection-form input[type="text"],
+.smart-collection-form input[type="number"],
+.smart-collection-form input[type="date"],
+.smart-collection-form textarea {
+    padding: 0.75rem;
+    background: var(--bg-secondary);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    transition: all 0.3s ease;
+}
+
+.smart-collection-form input:focus,
+.smart-collection-form textarea:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+.smart-collection-form textarea {
+    min-height: 80px;
+    resize: vertical;
+    font-family: inherit;
+}
+
+/* Tags Selector */
+.tags-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.tag-checkbox {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-primary);
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.tag-checkbox:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.tag-checkbox input[type="checkbox"] {
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
+}
+
+.tag-checkbox input[type="checkbox"]:checked + .tag-badge {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+}
+
+.tag-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    color: var(--accent-primary);
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+/* Form row for duration/date ranges */
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.form-row .form-group {
+    margin: 0;
+}
+
+/* Color and Icon picker row */
+.picker-row {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 1rem;
+}
+
+.smart-collection-form input[type="color"] {
+    height: 45px;
+    padding: 0.25rem;
+    cursor: pointer;
+}
+
+.smart-collection-form input[type="text"]#smartCollectionIcon {
+    font-size: 1.5rem;
+    text-align: center;
+}
+
+/* Form actions */
+.smart-collection-form-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.smart-collection-form-actions button {
+    flex: 1;
+}
+
+/* Auto-tag button */
+#autoTagBtn {
+    margin-top: 0.5rem;
+}
+
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+/* Responsive Smart Collections */
+@media (max-width: 768px) {
+    .smart-collections-modal,
+    .create-smart-collection-modal {
+        width: 95%;
+        padding: 1.5rem;
+        max-height: 90vh;
+    }
+
+    .smart-collection-header {
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .smart-collection-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .form-row,
+    .picker-row {
+        grid-template-columns: 1fr;
+    }
+
+    .smart-collection-form-actions {
+        flex-direction: column;
+    }
+
+    .tags-selector {
+        max-height: 150px;
+    }
+}

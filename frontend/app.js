@@ -367,6 +367,27 @@ class VideoGallery {
             });
         });
 
+        // Smart Collections
+        const openSmartCollectionsBtn = document.getElementById('openSmartCollectionsBtn');
+        if (openSmartCollectionsBtn) {
+            openSmartCollectionsBtn.addEventListener('click', () => this.openSmartCollectionsModal());
+        }
+
+        const createSmartCollectionBtn = document.getElementById('createSmartCollectionBtn');
+        if (createSmartCollectionBtn) {
+            createSmartCollectionBtn.addEventListener('click', () => this.openCreateSmartCollectionModal());
+        }
+
+        const saveSmartCollectionBtn = document.getElementById('saveSmartCollectionBtn');
+        if (saveSmartCollectionBtn) {
+            saveSmartCollectionBtn.addEventListener('click', () => this.saveSmartCollection());
+        }
+
+        const autoTagBtn = document.getElementById('autoTagBtn');
+        if (autoTagBtn) {
+            autoTagBtn.addEventListener('click', () => this.autoTagVideo());
+        }
+
         // Keyboard shortcuts (global)
         document.addEventListener('keydown', (e) => this.handleKeyPress(e));
     }
@@ -2702,6 +2723,305 @@ class VideoGallery {
             this.showToast('Грешка при пускане на видеото', 'error');
         }
     }
+
+    // ========== SMART COLLECTIONS & TAGS METHODS ==========
+
+    async openSmartCollectionsModal() {
+        const modal = document.getElementById('smartCollectionsModal');
+        modal.style.display = 'flex';
+        await this.loadSmartCollections();
+    }
+
+    closeSmartCollectionsModal() {
+        const modal = document.getElementById('smartCollectionsModal');
+        modal.style.display = 'none';
+    }
+
+    async loadSmartCollections() {
+        try {
+            const response = await fetch('/api/smart-collections');
+            const data = await response.json();
+
+            this.renderSmartCollections(data.collections);
+        } catch (error) {
+            console.error('Error loading smart collections:', error);
+            this.showToast('Грешка при зареждане на колекциите', 'error');
+        }
+    }
+
+    renderSmartCollections(collections) {
+        const container = document.getElementById('smartCollectionsList');
+
+        if (!collections || collections.length === 0) {
+            container.innerHTML = '<p class="empty-state">Няма създадени smart collections</p>';
+            return;
+        }
+
+        container.innerHTML = collections.map(collection => {
+            const rules = JSON.parse(collection.rules || '{}');
+            const videoCount = collection.video_count || 0;
+
+            return `
+                <div class="smart-collection-item" style="border-left: 4px solid ${collection.color || '#10B981'}">
+                    <div class="smart-collection-header">
+                        <div class="smart-collection-info">
+                            <span class="smart-collection-icon">${collection.icon || '📁'}</span>
+                            <div>
+                                <h3>${this.escapeHtml(collection.name)}</h3>
+                                <p class="smart-collection-desc">${this.escapeHtml(collection.description || '')}</p>
+                            </div>
+                        </div>
+                        <div class="smart-collection-actions">
+                            <span class="video-count">${videoCount} видеа</span>
+                            <button class="btn btn-small" onclick="app.viewSmartCollection(${collection.id})">
+                                👁️ Виж
+                            </button>
+                            <button class="btn btn-small btn-danger" onclick="app.deleteSmartCollection(${collection.id})">
+                                🗑️
+                            </button>
+                        </div>
+                    </div>
+                    <div class="smart-collection-rules">
+                        ${this.formatCollectionRules(rules)}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    formatCollectionRules(rules) {
+        const parts = [];
+
+        if (rules.tags && rules.tags.length > 0) {
+            parts.push(`Тагове: ${rules.tags.map(t => `<span class="tag-badge">${this.escapeHtml(t)}</span>`).join(' ')}`);
+        }
+
+        if (rules.channel) {
+            parts.push(`Канал: <strong>${this.escapeHtml(rules.channel)}</strong>`);
+        }
+
+        if (rules.source) {
+            parts.push(`Източник: <strong>${this.escapeHtml(rules.source)}</strong>`);
+        }
+
+        if (rules.minDuration || rules.maxDuration) {
+            const min = rules.minDuration ? `${rules.minDuration} мин` : '∞';
+            const max = rules.maxDuration ? `${rules.maxDuration} мин` : '∞';
+            parts.push(`Продължителност: ${min} - ${max}`);
+        }
+
+        if (rules.favoritesOnly) {
+            parts.push('Само любими ⭐');
+        }
+
+        if (rules.dateFrom || rules.dateTo) {
+            const from = rules.dateFrom || 'началото';
+            const to = rules.dateTo || 'сега';
+            parts.push(`Период: ${from} до ${to}`);
+        }
+
+        return parts.length > 0 ? parts.join(' • ') : 'Без филтри';
+    }
+
+    async openCreateSmartCollectionModal() {
+        const modal = document.getElementById('createSmartCollectionModal');
+        modal.style.display = 'flex';
+
+        // Reset form
+        document.getElementById('smartCollectionName').value = '';
+        document.getElementById('smartCollectionDescription').value = '';
+        document.getElementById('smartCollectionChannel').value = '';
+        document.getElementById('smartCollectionSource').value = '';
+        document.getElementById('smartCollectionMinDuration').value = '';
+        document.getElementById('smartCollectionMaxDuration').value = '';
+        document.getElementById('smartCollectionDateFrom').value = '';
+        document.getElementById('smartCollectionDateTo').value = '';
+        document.getElementById('smartCollectionFavorites').checked = false;
+        document.getElementById('smartCollectionColor').value = '#10B981';
+        document.getElementById('smartCollectionIcon').value = '📁';
+
+        // Load tags for selector
+        await this.loadTagsSelector();
+    }
+
+    closeCreateSmartCollectionModal() {
+        const modal = document.getElementById('createSmartCollectionModal');
+        modal.style.display = 'none';
+    }
+
+    async loadTagsSelector() {
+        try {
+            const response = await fetch('/api/tags');
+            const data = await response.json();
+
+            const container = document.getElementById('tagsSelector');
+
+            if (!data.tags || data.tags.length === 0) {
+                container.innerHTML = '<p class="empty-state">Няма налични тагове</p>';
+                return;
+            }
+
+            container.innerHTML = data.tags.map(tag => `
+                <label class="tag-checkbox">
+                    <input type="checkbox" value="${this.escapeHtml(tag)}" data-tag="${this.escapeHtml(tag)}">
+                    <span class="tag-badge">${this.escapeHtml(tag)}</span>
+                </label>
+            `).join('');
+        } catch (error) {
+            console.error('Error loading tags:', error);
+            this.showToast('Грешка при зареждане на таговете', 'error');
+        }
+    }
+
+    async saveSmartCollection() {
+        try {
+            const name = document.getElementById('smartCollectionName').value.trim();
+            const description = document.getElementById('smartCollectionDescription').value.trim();
+
+            if (!name) {
+                this.showToast('Моля въведете име', 'error');
+                return;
+            }
+
+            // Collect selected tags
+            const selectedTags = Array.from(
+                document.querySelectorAll('#tagsSelector input[type="checkbox"]:checked')
+            ).map(cb => cb.value);
+
+            // Build rules object
+            const rules = {};
+
+            if (selectedTags.length > 0) {
+                rules.tags = selectedTags;
+            }
+
+            const channel = document.getElementById('smartCollectionChannel').value.trim();
+            if (channel) rules.channel = channel;
+
+            const source = document.getElementById('smartCollectionSource').value.trim();
+            if (source) rules.source = source;
+
+            const minDuration = parseInt(document.getElementById('smartCollectionMinDuration').value);
+            if (!isNaN(minDuration)) rules.minDuration = minDuration;
+
+            const maxDuration = parseInt(document.getElementById('smartCollectionMaxDuration').value);
+            if (!isNaN(maxDuration)) rules.maxDuration = maxDuration;
+
+            const dateFrom = document.getElementById('smartCollectionDateFrom').value;
+            if (dateFrom) rules.dateFrom = dateFrom;
+
+            const dateTo = document.getElementById('smartCollectionDateTo').value;
+            if (dateTo) rules.dateTo = dateTo;
+
+            const favoritesOnly = document.getElementById('smartCollectionFavorites').checked;
+            if (favoritesOnly) rules.favoritesOnly = true;
+
+            const color = document.getElementById('smartCollectionColor').value;
+            const icon = document.getElementById('smartCollectionIcon').value;
+
+            const collectionData = {
+                name,
+                description,
+                rules: JSON.stringify(rules),
+                color,
+                icon,
+                auto_update: true
+            };
+
+            const response = await fetch('/api/smart-collections', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(collectionData)
+            });
+
+            if (!response.ok) throw new Error('Failed to create collection');
+
+            this.showToast('Smart collection създадена успешно!', 'success');
+            this.closeCreateSmartCollectionModal();
+            await this.loadSmartCollections();
+
+        } catch (error) {
+            console.error('Error creating smart collection:', error);
+            this.showToast('Грешка при създаване на колекцията', 'error');
+        }
+    }
+
+    async deleteSmartCollection(collectionId) {
+        if (!confirm('Сигурни ли сте, че искате да изтриете тази колекция?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/smart-collections/${collectionId}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) throw new Error('Failed to delete collection');
+
+            this.showToast('Колекцията е изтрита', 'success');
+            await this.loadSmartCollections();
+
+        } catch (error) {
+            console.error('Error deleting smart collection:', error);
+            this.showToast('Грешка при изтриване на колекцията', 'error');
+        }
+    }
+
+    async viewSmartCollection(collectionId) {
+        try {
+            const response = await fetch(`/api/smart-collections/${collectionId}/videos`);
+            const data = await response.json();
+
+            // Close smart collections modal and show videos
+            this.closeSmartCollectionsModal();
+
+            // Update current view
+            this.currentView = 'smart-collection';
+            this.currentSmartCollectionId = collectionId;
+
+            // Update sidebar active state
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.classList.remove('active');
+            });
+
+            // Render videos
+            this.renderVideos(data.videos);
+
+            // Update header
+            const collection = data.collection;
+            this.showToast(`${collection.icon || '📁'} ${collection.name}: ${data.videos.length} видеа`, 'info');
+
+        } catch (error) {
+            console.error('Error viewing smart collection:', error);
+            this.showToast('Грешка при зареждане на видеата', 'error');
+        }
+    }
+
+    async autoTagVideo() {
+        if (!this.currentVideo) return;
+
+        try {
+            const response = await fetch(`/api/videos/${this.currentVideo.video_id}/auto-tag`, {
+                method: 'POST'
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                this.showToast(`Добавени ${data.tags.length} тага автоматично!`, 'success');
+
+                // Update current video tags
+                this.currentVideo.tags = data.tags;
+
+                // Refresh video modal to show new tags
+                await this.loadVideoDetails(this.currentVideo.video_id);
+            }
+
+        } catch (error) {
+            console.error('Error auto-tagging video:', error);
+            this.showToast('Грешка при автоматично генериране на тагове', 'error');
+        }
+    }
 }
 
 // Modal close functions (global)
@@ -2765,6 +3085,18 @@ function closeDownloadsModal() {
 function closeDownloadQualityModal() {
     if (window.app) {
         window.app.closeDownloadQualityModal();
+    }
+}
+
+function closeSmartCollectionsModal() {
+    if (window.app) {
+        window.app.closeSmartCollectionsModal();
+    }
+}
+
+function closeCreateSmartCollectionModal() {
+    if (window.app) {
+        window.app.closeCreateSmartCollectionModal();
     }
 }
 
