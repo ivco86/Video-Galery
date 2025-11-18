@@ -1,0 +1,529 @@
+from flask import Flask, request, jsonify, send_from_directory, send_file
+from flask_cors import CORS
+import os
+from pathlib import Path
+from database import VideoDatabase
+from youtube_manager import YouTubeManager
+from video_processor import VideoProcessor
+from subtitle_manager import SubtitleManager
+from ai_analyzer import AIAnalyzer
+from datetime import datetime
+import json
+
+app = Flask(__name__, static_folder='../frontend', static_url_path='')
+CORS(app)
+
+# Configuration
+YOUTUBE_API_KEY = os.environ.get('YOUTUBE_API_KEY', '')
+LM_STUDIO_URL = os.environ.get('LM_STUDIO_URL', 'http://localhost:1234')
+VIDEOS_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'videos')
+THUMBNAILS_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'thumbnails')
+
+# Initialize components
+db = VideoDatabase('videos.db')
+youtube = YouTubeManager(api_key=YOUTUBE_API_KEY if YOUTUBE_API_KEY else None)
+video_processor = VideoProcessor(videos_folder=VIDEOS_FOLDER)
+ai_analyzer = AIAnalyzer(lm_studio_url=LM_STUDIO_URL)
+
+# Ensure directories exist
+os.makedirs(VIDEOS_FOLDER, exist_ok=True)
+os.makedirs(THUMBNAILS_FOLDER, exist_ok=True)
+
+
+@app.route('/')
+def index():
+    """Serve frontend"""
+    return send_from_directory('../frontend', 'index.html')
+
+
+@app.route('/api/status', methods=['GET'])
+def get_status():
+    """Get system status"""
+    return jsonify({
+        'database': 'connected',
+        'youtube_api': 'configured' if YOUTUBE_API_KEY else 'not configured',
+        'lm_studio': 'available' if ai_analyzer.is_available() else 'not available',
+        'videos_count': len(db.get_videos()),
+        'boards_count': len(db.get_boards())
+    })
+
+
+# ========== VIDEO ENDPOINTS ==========
+
+@app.route('/api/videos', methods=['GET'])
+def get_videos():
+    """Get all videos with optional filtering"""
+    source = request.args.get('source', 'all')
+    board_id = request.args.get('board_id', type=int)
+    favorite_only = request.args.get('favorite', 'false') == 'true'
+
+    if board_id:
+        videos = db.get_videos(board_id=board_id)
+    elif source != 'all':
+        videos = db.get_videos(source=source)
+    else:
+        videos = db.get_videos()
+
+    if favorite_only:
+        videos = [v for v in videos if v.get('is_favorite')]
+
+    return jsonify(videos)
+
+
+@app.route('/api/videos/<video_id>', methods=['GET'])
+def get_video(video_id):
+    """Get specific video details"""
+    video = db.get_video(video_id)
+
+    if video:
+        return jsonify(video)
+    else:
+        return jsonify({'error': 'Video not found'}), 404
+
+
+@app.route('/api/videos/<video_id>', methods=['PUT'])
+def update_video(video_id):
+    """Update video information"""
+    updates = request.json
+
+    success = db.update_video(video_id, updates)
+
+    if success:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': 'Video not found'}), 404
+
+
+@app.route('/api/videos/<video_id>', methods=['DELETE'])
+def delete_video(video_id):
+    """Delete a video"""
+    success = db.delete_video(video_id)
+
+    if success:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': 'Video not found'}), 404
+
+
+@app.route('/api/videos/<video_id>/watch', methods=['POST'])
+def mark_watched(video_id):
+    """Mark video as watched"""
+    db.update_watch_stats(video_id)
+    return jsonify({'success': True})
+
+
+@app.route('/api/videos/<video_id>/favorite', methods=['POST'])
+def toggle_favorite(video_id):
+    """Toggle video favorite status"""
+    video = db.get_video(video_id)
+
+    if video:
+        new_status = not video.get('is_favorite', False)
+        db.update_video(video_id, {'is_favorite': new_status})
+        return jsonify({'success': True, 'is_favorite': new_status})
+    else:
+        return jsonify({'error': 'Video not found'}), 404
+
+
+# ========== YOUTUBE ENDPOINTS ==========
+
+@app.route('/api/youtube/sync', methods=['POST'])
+def sync_youtube():
+    """Sync videos from YouTube (liked videos)"""
+    if not YOUTUBE_API_KEY:
+        return jsonify({'error': 'YouTube API key not configured'}), 400
+
+    try:
+        saved_videos = youtube.get_saved_videos(max_results=50)
+        added_count = 0
+
+        for item in saved_videos.get('items', []):
+            video_data = youtube.format_video_data(item, source='youtube')
+
+            # Check if already exists
+            if db.get_video(video_data['video_id']):
+                continue
+
+            # Download subtitles
+            subtitles = youtube.download_subtitles(video_data['video_id'])
+
+            # AI analysis if subtitles available
+            if subtitles and ai_analyzer.is_available():
+                subtitle_lang = 'bg' if 'bg' in subtitles else 'en'
+                if subtitle_lang in subtitles:
+                    sub_data = subtitles[subtitle_lang]['data']
+                    full_text = ' '.join([s['text'] for s in sub_data])
+
+                    ai_result = ai_analyzer.analyze_video_content(
+                        video_data['title'],
+                        video_data.get('description', ''),
+                        full_text[:3000]
+                    )
+
+                    if ai_result:
+                        video_data['ai_summary'] = ai_result.get('summary')
+                        video_data['ai_tags'] = ai_result.get('tags', [])
+
+            # Add to database
+            video_id = db.add_video(video_data)
+
+            if video_id:
+                added_count += 1
+
+                # Save subtitles to database
+                for lang, sub_info in subtitles.items():
+                    converted_subs = SubtitleManager.convert_youtube_transcript(sub_info['data'])
+                    full_text = SubtitleManager.get_full_text(converted_subs)
+
+                    db.add_subtitle({
+                        'video_id': video_data['video_id'],
+                        'language': lang,
+                        'content': full_text,
+                        'source': 'youtube'
+                    })
+
+        return jsonify({'success': True, 'added': added_count})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/youtube/import', methods=['POST'])
+def import_youtube_video():
+    """Import a specific YouTube video by URL"""
+    data = request.json
+    video_url = data.get('url')
+
+    if not video_url:
+        return jsonify({'error': 'URL required'}), 400
+
+    try:
+        # Extract video ID
+        video_id = youtube.extract_video_id(video_url)
+
+        if not video_id:
+            return jsonify({'error': 'Invalid YouTube URL'}), 400
+
+        # Check if already exists
+        if db.get_video(video_id):
+            return jsonify({'error': 'Video already exists'}), 409
+
+        # Get video info
+        if YOUTUBE_API_KEY:
+            video_info = youtube.get_video_details(video_id)
+            if video_info:
+                video_data = youtube.format_video_data(video_info, source='youtube')
+            else:
+                return jsonify({'error': 'Video not found'}), 404
+        else:
+            # Use yt-dlp as fallback
+            video_info = youtube.get_video_info_without_api(video_url)
+            if video_info:
+                video_data = video_info
+                video_data['source'] = 'youtube'
+            else:
+                return jsonify({'error': 'Could not fetch video info'}), 500
+
+        # Download subtitles
+        subtitles = youtube.download_subtitles(video_id)
+
+        # AI analysis
+        if subtitles and ai_analyzer.is_available():
+            subtitle_lang = 'bg' if 'bg' in subtitles else 'en'
+            if subtitle_lang in subtitles:
+                sub_data = subtitles[subtitle_lang]['data']
+                full_text = ' '.join([s['text'] for s in sub_data])
+
+                ai_result = ai_analyzer.analyze_video_content(
+                    video_data['title'],
+                    video_data.get('description', ''),
+                    full_text[:3000]
+                )
+
+                if ai_result:
+                    video_data['ai_summary'] = ai_result.get('summary')
+                    video_data['ai_tags'] = ai_result.get('tags', [])
+
+        # Add to database
+        added_id = db.add_video(video_data)
+
+        if added_id:
+            # Save subtitles
+            for lang, sub_info in subtitles.items():
+                converted_subs = SubtitleManager.convert_youtube_transcript(sub_info['data'])
+                full_text = SubtitleManager.get_full_text(converted_subs)
+
+                db.add_subtitle({
+                    'video_id': video_id,
+                    'language': lang,
+                    'content': full_text,
+                    'source': 'youtube'
+                })
+
+            return jsonify({'success': True, 'video_id': video_id})
+        else:
+            return jsonify({'error': 'Failed to add video'}), 500
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ========== LOCAL VIDEO ENDPOINTS ==========
+
+@app.route('/api/videos/scan-local', methods=['POST'])
+def scan_local():
+    """Scan for local video files"""
+    try:
+        videos = video_processor.scan_local_videos()
+        added_count = 0
+
+        for video in videos:
+            video_info = video_processor.get_video_info(video['path'])
+
+            # Check if already exists
+            if db.get_video(video_info['video_id']):
+                continue
+
+            # Generate thumbnail
+            thumb_filename = f"{video_info['video_id']}.jpg"
+            thumb_path = os.path.join(THUMBNAILS_FOLDER, thumb_filename)
+            thumbnail = video_processor.generate_thumbnail_ffmpeg(video['path'], thumb_path, timestamp=5)
+
+            if thumbnail:
+                video_info['thumbnail_url'] = f'/api/thumbnails/{thumb_filename}'
+
+            # Extract subtitles if available
+            subtitle_dir = os.path.join(THUMBNAILS_FOLDER, 'subtitles')
+            os.makedirs(subtitle_dir, exist_ok=True)
+
+            extracted_subs = video_processor.extract_subtitles(video['path'], subtitle_dir)
+
+            # Add to database
+            video_id = db.add_video(video_info)
+
+            if video_id:
+                added_count += 1
+
+                # Process and save subtitles
+                for sub_file in extracted_subs:
+                    subtitles = SubtitleManager.parse_subtitle_file(sub_file['path'])
+                    full_text = SubtitleManager.get_full_text(subtitles)
+
+                    db.add_subtitle({
+                        'video_id': video_info['video_id'],
+                        'language': sub_file['language'],
+                        'subtitle_path': sub_file['path'],
+                        'content': full_text,
+                        'source': 'embedded'
+                    })
+
+                    # AI analysis if available
+                    if ai_analyzer.is_available() and full_text:
+                        ai_result = ai_analyzer.analyze_video_content(
+                            video_info['title'],
+                            '',
+                            full_text[:3000]
+                        )
+
+                        if ai_result:
+                            db.update_video(video_info['video_id'], {
+                                'ai_summary': ai_result.get('summary'),
+                                'ai_tags': ai_result.get('tags', [])
+                            })
+
+        return jsonify({'success': True, 'added': added_count, 'total_found': len(videos)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/videos/<video_id>/stream')
+def stream_video(video_id):
+    """Stream local video file"""
+    video = db.get_video(video_id)
+
+    if not video or video.get('source') != 'local':
+        return jsonify({'error': 'Video not found'}), 404
+
+    file_path = video.get('file_path')
+
+    if not file_path or not os.path.exists(file_path):
+        return jsonify({'error': 'Video file not found'}), 404
+
+    return send_file(file_path, mimetype='video/mp4')
+
+
+@app.route('/api/thumbnails/<filename>')
+def get_thumbnail(filename):
+    """Serve thumbnail images"""
+    return send_from_directory(THUMBNAILS_FOLDER, filename)
+
+
+# ========== SUBTITLE ENDPOINTS ==========
+
+@app.route('/api/videos/<video_id>/subtitles', methods=['GET'])
+def get_subtitles(video_id):
+    """Get subtitles for a video"""
+    lang = request.args.get('lang')
+
+    subtitles = db.get_subtitles(video_id, language=lang)
+
+    if subtitles:
+        # Parse subtitle content if needed
+        for sub in subtitles:
+            if sub.get('subtitle_path'):
+                parsed = SubtitleManager.parse_subtitle_file(sub['subtitle_path'])
+                sub['entries'] = parsed
+
+        return jsonify(subtitles)
+    else:
+        return jsonify([])
+
+
+# ========== SEARCH ENDPOINTS ==========
+
+@app.route('/api/search', methods=['GET'])
+def search():
+    """Search videos by title, description, and subtitles"""
+    query = request.args.get('q', '')
+    search_subtitles = request.args.get('subtitles', 'true') == 'true'
+
+    if not query:
+        return jsonify({'results': []})
+
+    results = db.search_videos(query, search_subtitles=search_subtitles)
+
+    # Add subtitle matches with timestamps
+    for video in results:
+        if search_subtitles:
+            subtitles = db.get_subtitles(video['video_id'])
+
+            for sub in subtitles:
+                if sub.get('subtitle_path'):
+                    parsed_subs = SubtitleManager.parse_subtitle_file(sub['subtitle_path'])
+                    matches = SubtitleManager.search_in_subtitles(parsed_subs, query)
+
+                    if matches:
+                        video['subtitle_matches'] = matches[:5]  # Top 5 matches
+                        break
+
+    return jsonify({'results': results, 'count': len(results)})
+
+
+# ========== BOARD ENDPOINTS ==========
+
+@app.route('/api/boards', methods=['GET'])
+def get_boards():
+    """Get all boards"""
+    boards = db.get_boards()
+    return jsonify(boards)
+
+
+@app.route('/api/boards', methods=['POST'])
+def create_board():
+    """Create a new board"""
+    board_data = request.json
+
+    if not board_data.get('name'):
+        return jsonify({'error': 'Board name required'}), 400
+
+    board_id = db.create_board(board_data)
+
+    return jsonify({'success': True, 'board_id': board_id})
+
+
+@app.route('/api/boards/<int:board_id>/videos', methods=['POST'])
+def add_video_to_board(board_id):
+    """Add video to board"""
+    data = request.json
+    video_id = data.get('video_id')
+
+    if not video_id:
+        return jsonify({'error': 'video_id required'}), 400
+
+    success = db.add_video_to_board(video_id, board_id)
+
+    if success:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': 'Failed to add video to board'}), 400
+
+
+@app.route('/api/boards/<int:board_id>/videos/<video_id>', methods=['DELETE'])
+def remove_video_from_board(board_id, video_id):
+    """Remove video from board"""
+    success = db.remove_video_from_board(video_id, board_id)
+
+    if success:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': 'Video not in board'}), 404
+
+
+# ========== AI ENDPOINTS ==========
+
+@app.route('/api/ai/analyze/<video_id>', methods=['POST'])
+def analyze_video(video_id):
+    """Run AI analysis on a video"""
+    if not ai_analyzer.is_available():
+        return jsonify({'error': 'AI analyzer not available'}), 503
+
+    video = db.get_video(video_id)
+
+    if not video:
+        return jsonify({'error': 'Video not found'}), 404
+
+    # Get subtitles
+    subtitles = db.get_subtitles(video_id)
+    subtitle_text = ''
+
+    if subtitles:
+        subtitle_text = subtitles[0].get('content', '')
+
+    ai_result = ai_analyzer.analyze_video_content(
+        video['title'],
+        video.get('description', ''),
+        subtitle_text[:3000]
+    )
+
+    if ai_result:
+        # Update video with AI results
+        db.update_video(video_id, {
+            'ai_summary': ai_result.get('summary'),
+            'ai_tags': ai_result.get('tags', [])
+        })
+
+        return jsonify({'success': True, 'result': ai_result})
+    else:
+        return jsonify({'error': 'AI analysis failed'}), 500
+
+
+@app.route('/api/ai/status', methods=['GET'])
+def ai_status():
+    """Check AI analyzer status"""
+    return jsonify({
+        'available': ai_analyzer.is_available(),
+        'url': LM_STUDIO_URL
+    })
+
+
+# ========== ERROR HANDLERS ==========
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({'error': 'Not found'}), 404
+
+
+@app.errorhandler(500)
+def server_error(e):
+    return jsonify({'error': 'Internal server error'}), 500
+
+
+if __name__ == '__main__':
+    print("=" * 50)
+    print("Video Gallery Server")
+    print("=" * 50)
+    print(f"YouTube API: {'Configured' if YOUTUBE_API_KEY else 'Not configured'}")
+    print(f"LM Studio: {LM_STUDIO_URL}")
+    print(f"Videos folder: {VIDEOS_FOLDER}")
+    print("=" * 50)
+
+    app.run(debug=True, host='0.0.0.0', port=5000)

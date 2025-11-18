@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Gallery</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container header-content">
+            <h1 class="logo">📹 Video Gallery</h1>
+
+            <div class="search-bar">
+                <input type="text" id="searchInput" placeholder="Търси видеа, субтитри..." class="search-input">
+                <button id="searchBtn" class="btn btn-primary">🔍 Търси</button>
+            </div>
+
+            <div class="header-actions">
+                <button id="syncYoutubeBtn" class="btn btn-secondary">
+                    ▶ Sync YouTube
+                </button>
+                <button id="scanLocalBtn" class="btn btn-secondary">
+                    📁 Scan Local
+                </button>
+                <button id="importYoutubeBtn" class="btn btn-secondary">
+                    ➕ Import URL
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="container main-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-section">
+                <h3>Филтри</h3>
+                <ul class="filter-list">
+                    <li class="filter-item active" data-filter="all">
+                        <span class="filter-icon">🎬</span>
+                        <span>Всички видеа</span>
+                    </li>
+                    <li class="filter-item" data-filter="youtube">
+                        <span class="filter-icon">▶️</span>
+                        <span>YouTube</span>
+                    </li>
+                    <li class="filter-item" data-filter="local">
+                        <span class="filter-icon">💾</span>
+                        <span>Локални</span>
+                    </li>
+                    <li class="filter-item" data-filter="favorites">
+                        <span class="filter-icon">⭐</span>
+                        <span>Любими</span>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="sidebar-section">
+                <div class="section-header">
+                    <h3>Колекции</h3>
+                    <button id="createBoardBtn" class="btn-icon">➕</button>
+                </div>
+                <ul id="boardsList" class="boards-list">
+                    <!-- Boards will be loaded here -->
+                </ul>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>Статистика</h3>
+                <div class="stats">
+                    <div class="stat-item">
+                        <span class="stat-label">Видеа:</span>
+                        <span id="totalVideos" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Колекции:</span>
+                        <span id="totalBoards" class="stat-value">0</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Toolbar -->
+            <div class="toolbar">
+                <div class="view-toggle">
+                    <button class="view-btn active" data-view="grid">
+                        <span>🔲</span> Grid
+                    </button>
+                    <button class="view-btn" data-view="list">
+                        <span>📋</span> List
+                    </button>
+                </div>
+
+                <div class="sort-controls">
+                    <label for="sortSelect">Сортирай:</label>
+                    <select id="sortSelect" class="sort-select">
+                        <option value="recent">Най-нови</option>
+                        <option value="title">Заглавие</option>
+                        <option value="duration">Продължителност</option>
+                        <option value="watched">Гледани</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Videos Grid -->
+            <div id="videoGrid" class="video-grid">
+                <!-- Videos will be loaded here -->
+            </div>
+
+            <!-- Loading Indicator -->
+            <div id="loadingIndicator" class="loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>Зареждане...</p>
+            </div>
+
+            <!-- Empty State -->
+            <div id="emptyState" class="empty-state" style="display: none;">
+                <div class="empty-icon">📹</div>
+                <h2>Няма видеа</h2>
+                <p>Започнете като импортирате видеа от YouTube или сканирате локална папка.</p>
+                <div class="empty-actions">
+                    <button class="btn btn-primary" onclick="document.getElementById('importYoutubeBtn').click()">
+                        ➕ Импортирай видео
+                    </button>
+                    <button class="btn btn-secondary" onclick="document.getElementById('scanLocalBtn').click()">
+                        📁 Сканирай локални файлове
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Video Player Modal -->
+    <div id="videoModal" class="modal" style="display: none;">
+        <div class="modal-overlay" onclick="closeVideoModal()"></div>
+        <div class="modal-content video-modal-content">
+            <button class="modal-close" onclick="closeVideoModal()">✕</button>
+
+            <div class="video-player-container">
+                <video id="videoPlayer" class="video-player" controls>
+                    <track id="subtitleTrack" kind="subtitles" srclang="bg" label="Bulgarian">
+                </video>
+
+                <!-- YouTube Player Alternative -->
+                <div id="youtubePlayer" style="display: none;">
+                    <iframe id="youtubeIframe" width="100%" height="600" frameborder="0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowfullscreen>
+                    </iframe>
+                </div>
+            </div>
+
+            <div class="video-info-panel">
+                <h2 id="videoTitle"></h2>
+                <div class="video-meta">
+                    <span id="videoChannel"></span>
+                    <span id="videoViews"></span>
+                    <span id="videoDuration"></span>
+                </div>
+
+                <div class="video-actions">
+                    <button id="favoriteBtn" class="btn btn-icon">⭐ Любими</button>
+                    <button id="addToBoardBtn" class="btn btn-icon">➕ Добави в колекция</button>
+                    <button id="analyzeBtn" class="btn btn-icon">🤖 AI Анализ</button>
+                </div>
+
+                <div class="video-description">
+                    <h3>Описание</h3>
+                    <p id="videoDescription"></p>
+                </div>
+
+                <div class="video-ai-summary" id="aiSummarySection" style="display: none;">
+                    <h3>AI Резюме</h3>
+                    <p id="aiSummary"></p>
+                    <div class="ai-tags" id="aiTags"></div>
+                </div>
+
+                <div class="video-subtitles">
+                    <h3>Субтитри</h3>
+                    <div class="subtitle-controls">
+                        <select id="subtitleLangSelect" class="subtitle-lang-select">
+                            <option value="">Избери език</option>
+                        </select>
+                        <input type="text" id="subtitleSearch" placeholder="Търси в субтитрите..." class="subtitle-search">
+                    </div>
+                    <div id="subtitleMatches" class="subtitle-matches"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import YouTube Modal -->
+    <div id="importModal" class="modal" style="display: none;">
+        <div class="modal-overlay" onclick="closeImportModal()"></div>
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeImportModal()">✕</button>
+            <h2>Импортирай YouTube видео</h2>
+            <div class="import-form">
+                <input type="text" id="youtubeUrlInput" placeholder="Постави YouTube URL..." class="input-large">
+                <button id="importSubmitBtn" class="btn btn-primary">Импортирай</button>
+            </div>
+            <div id="importStatus" class="import-status"></div>
+        </div>
+    </div>
+
+    <!-- Create Board Modal -->
+    <div id="createBoardModal" class="modal" style="display: none;">
+        <div class="modal-overlay" onclick="closeCreateBoardModal()"></div>
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeCreateBoardModal()">✕</button>
+            <h2>Създай нова колекция</h2>
+            <div class="board-form">
+                <input type="text" id="boardNameInput" placeholder="Име на колекцията..." class="input-large">
+                <textarea id="boardDescriptionInput" placeholder="Описание (опционално)..." class="textarea"></textarea>
+
+                <div class="board-customization">
+                    <label>Цвят:</label>
+                    <div class="color-picker">
+                        <button class="color-btn" data-color="#3B82F6" style="background: #3B82F6"></button>
+                        <button class="color-btn" data-color="#10B981" style="background: #10B981"></button>
+                        <button class="color-btn" data-color="#F59E0B" style="background: #F59E0B"></button>
+                        <button class="color-btn" data-color="#EF4444" style="background: #EF4444"></button>
+                        <button class="color-btn" data-color="#8B5CF6" style="background: #8B5CF6"></button>
+                        <button class="color-btn" data-color="#EC4899" style="background: #EC4899"></button>
+                    </div>
+
+                    <label>Икона:</label>
+                    <div class="icon-picker">
+                        <button class="icon-btn" data-icon="📁">📁</button>
+                        <button class="icon-btn" data-icon="🎬">🎬</button>
+                        <button class="icon-btn" data-icon="📚">📚</button>
+                        <button class="icon-btn" data-icon="⭐">⭐</button>
+                        <button class="icon-btn" data-icon="🎓">🎓</button>
+                        <button class="icon-btn" data-icon="💼">💼</button>
+                    </div>
+                </div>
+
+                <button id="createBoardSubmitBtn" class="btn btn-primary">Създай</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

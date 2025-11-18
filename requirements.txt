@@ -1,0 +1,23 @@
+# Web Framework
+Flask==3.0.0
+flask-cors==4.0.0
+
+# YouTube Integration
+google-api-python-client==2.108.0
+youtube-transcript-api==0.6.1
+yt-dlp==2023.11.16
+
+# Video Processing
+opencv-python==4.8.1.78
+
+# Subtitle Handling
+pysrt==1.1.2
+webvtt-py==0.4.6
+
+# HTTP Requests
+requests==2.31.0
+
+# Database (SQLite is built-in, no additional package needed)
+
+# Optional: Additional utilities
+python-dotenv==1.0.0
