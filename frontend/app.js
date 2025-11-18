@@ -25,6 +25,11 @@ class VideoGallery {
             repeat: 'none' // 'none', 'all', 'one'
         };
 
+        // Bookmark state
+        this.currentBookmarks = [];
+        this.selectedBookmarkColor = '#3B82F6';
+        this.editingBookmark = null;
+
         this.init();
     }
 
@@ -164,6 +169,31 @@ class VideoGallery {
         if (playlistVideoPlayer) {
             playlistVideoPlayer.addEventListener('ended', () => this.onPlaylistVideoEnded());
         }
+
+        // Bookmarks
+        const addBookmarkBtn = document.getElementById('addBookmarkBtn');
+        if (addBookmarkBtn) {
+            addBookmarkBtn.addEventListener('click', () => this.openBookmarkModal());
+        }
+
+        const saveBookmarkBtn = document.getElementById('saveBookmarkBtn');
+        if (saveBookmarkBtn) {
+            saveBookmarkBtn.addEventListener('click', () => this.saveBookmark());
+        }
+
+        const useCurrentTimeBtn = document.getElementById('useCurrentTimeBtn');
+        if (useCurrentTimeBtn) {
+            useCurrentTimeBtn.addEventListener('click', () => this.useCurrentTime());
+        }
+
+        // Bookmark color picker
+        document.querySelectorAll('.color-picker-bookmark .color-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.color-picker-bookmark .color-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                this.selectedBookmarkColor = e.target.dataset.color;
+            });
+        });
     }
 
     // API Calls
@@ -354,6 +384,9 @@ class VideoGallery {
 
         // Load subtitles
         await this.loadSubtitles(video.video_id);
+
+        // Load bookmarks
+        await this.loadBookmarks(video.video_id);
 
         // Mark as watched
         this.apiCall(`/videos/${video.video_id}/watch`, { method: 'POST' });
@@ -1081,6 +1114,215 @@ class VideoGallery {
         videoPlayer.pause();
         youtubeIframe.src = '';
     }
+
+    // ========== BOOKMARK METHODS ==========
+
+    async loadBookmarks(videoId) {
+        try {
+            this.currentBookmarks = await this.apiCall(`/videos/${videoId}/bookmarks`);
+            this.renderBookmarks();
+            this.renderBookmarkTimeline();
+        } catch (error) {
+            console.error('Error loading bookmarks:', error);
+            this.currentBookmarks = [];
+        }
+    }
+
+    renderBookmarks() {
+        const container = document.getElementById('bookmarksList');
+
+        if (!this.currentBookmarks || this.currentBookmarks.length === 0) {
+            container.innerHTML = '<p class="empty-message">Няма добавени bookmarks</p>';
+            return;
+        }
+
+        container.innerHTML = '';
+
+        this.currentBookmarks.forEach(bookmark => {
+            const item = document.createElement('div');
+            item.className = 'bookmark-item';
+            item.innerHTML = `
+                <div class="bookmark-marker" style="background: ${bookmark.color}"></div>
+                <div class="bookmark-content">
+                    <div class="bookmark-header">
+                        <span class="bookmark-time">${this.formatDuration(bookmark.timestamp)}</span>
+                        <span class="bookmark-title">${this.escapeHtml(bookmark.title)}</span>
+                    </div>
+                    ${bookmark.description ? `<p class="bookmark-description">${this.escapeHtml(bookmark.description)}</p>` : ''}
+                </div>
+                <div class="bookmark-actions">
+                    <button class="btn-icon-small" onclick="app.jumpToBookmark(${bookmark.timestamp})" title="Премини">▶️</button>
+                    <button class="btn-icon-small" onclick="app.editBookmark(${bookmark.id})" title="Редактирай">✏️</button>
+                    <button class="btn-icon-small" onclick="app.deleteBookmark(${bookmark.id})" title="Изтрий">🗑️</button>
+                </div>
+            `;
+            container.appendChild(item);
+        });
+    }
+
+    renderBookmarkTimeline() {
+        const timeline = document.getElementById('bookmarkTimeline');
+
+        if (!this.currentVideo || !this.currentBookmarks || this.currentBookmarks.length === 0) {
+            timeline.innerHTML = '';
+            return;
+        }
+
+        const duration = this.currentVideo.duration || 1;
+
+        timeline.innerHTML = '';
+
+        this.currentBookmarks.forEach(bookmark => {
+            const position = (bookmark.timestamp / duration) * 100;
+            const marker = document.createElement('div');
+            marker.className = 'timeline-marker';
+            marker.style.left = `${position}%`;
+            marker.style.background = bookmark.color;
+            marker.title = `${bookmark.title} - ${this.formatDuration(bookmark.timestamp)}`;
+            marker.onclick = () => this.jumpToBookmark(bookmark.timestamp);
+            timeline.appendChild(marker);
+        });
+    }
+
+    openBookmarkModal(bookmarkId = null) {
+        const modal = document.getElementById('bookmarkModal');
+        const title = document.getElementById('bookmarkModalTitle');
+        const timeInput = document.getElementById('bookmarkTimeInput');
+        const titleInput = document.getElementById('bookmarkTitleInput');
+        const descInput = document.getElementById('bookmarkDescInput');
+
+        if (bookmarkId) {
+            // Edit mode
+            const bookmark = this.currentBookmarks.find(b => b.id === bookmarkId);
+            if (!bookmark) return;
+
+            this.editingBookmark = bookmark;
+            title.textContent = 'Редактирай Bookmark';
+            timeInput.value = bookmark.timestamp;
+            titleInput.value = bookmark.title;
+            descInput.value = bookmark.description || '';
+            this.selectedBookmarkColor = bookmark.color;
+
+            // Set active color
+            document.querySelectorAll('.color-picker-bookmark .color-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.color === bookmark.color);
+            });
+        } else {
+            // Add mode
+            this.editingBookmark = null;
+            title.textContent = 'Добави Bookmark';
+            timeInput.value = '';
+            titleInput.value = '';
+            descInput.value = '';
+            this.selectedBookmarkColor = '#3B82F6';
+
+            // Reset color picker
+            document.querySelectorAll('.color-picker-bookmark .color-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.color === '#3B82F6');
+            });
+        }
+
+        modal.style.display = 'flex';
+    }
+
+    useCurrentTime() {
+        const videoPlayer = document.getElementById('videoPlayer');
+        const timeInput = document.getElementById('bookmarkTimeInput');
+
+        if (videoPlayer && !videoPlayer.paused) {
+            timeInput.value = Math.floor(videoPlayer.currentTime);
+        }
+    }
+
+    async saveBookmark() {
+        const timeInput = document.getElementById('bookmarkTimeInput');
+        const titleInput = document.getElementById('bookmarkTitleInput');
+        const descInput = document.getElementById('bookmarkDescInput');
+
+        const timestamp = parseInt(timeInput.value);
+        const title = titleInput.value.trim();
+
+        if (isNaN(timestamp) || timestamp < 0) {
+            this.showToast('Моля въведете валидно време', 'error');
+            return;
+        }
+
+        if (!title) {
+            this.showToast('Моля въведете заглавие', 'error');
+            return;
+        }
+
+        const bookmarkData = {
+            timestamp,
+            title,
+            description: descInput.value.trim(),
+            color: this.selectedBookmarkColor
+        };
+
+        try {
+            if (this.editingBookmark) {
+                // Update existing bookmark
+                await this.apiCall(`/bookmarks/${this.editingBookmark.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(bookmarkData)
+                });
+                this.showToast('Bookmark актуализиран', 'success');
+            } else {
+                // Create new bookmark
+                await this.apiCall(`/videos/${this.currentVideo.video_id}/bookmarks`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(bookmarkData)
+                });
+                this.showToast('Bookmark добавен', 'success');
+            }
+
+            await this.loadBookmarks(this.currentVideo.video_id);
+            this.closeBookmarkModal();
+        } catch (error) {
+            console.error('Error saving bookmark:', error);
+        }
+    }
+
+    async deleteBookmark(bookmarkId) {
+        if (!confirm('Сигурни ли сте, че искате да изтриете този bookmark?')) {
+            return;
+        }
+
+        try {
+            await this.apiCall(`/bookmarks/${bookmarkId}`, { method: 'DELETE' });
+            this.showToast('Bookmark изтрит', 'success');
+            await this.loadBookmarks(this.currentVideo.video_id);
+        } catch (error) {
+            console.error('Error deleting bookmark:', error);
+        }
+    }
+
+    editBookmark(bookmarkId) {
+        this.openBookmarkModal(bookmarkId);
+    }
+
+    jumpToBookmark(timestamp) {
+        const videoPlayer = document.getElementById('videoPlayer');
+        const youtubeIframe = document.getElementById('youtubeIframe');
+
+        if (this.currentVideo.source === 'youtube') {
+            // For YouTube, we need to update the iframe URL with timestamp
+            const videoId = this.currentVideo.video_id;
+            youtubeIframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&start=${timestamp}`;
+        } else {
+            // For local video
+            videoPlayer.currentTime = timestamp;
+            videoPlayer.play();
+        }
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
 }
 
 // Modal close functions (global)
@@ -1115,6 +1357,10 @@ function closePlaylistPlayerModal() {
     if (window.app) {
         window.app.closePlaylistPlayerModal();
     }
+}
+
+function closeBookmarkModal() {
+    document.getElementById('bookmarkModal').style.display = 'none';
 }
 
 // Initialize app when DOM is ready

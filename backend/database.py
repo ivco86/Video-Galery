@@ -137,6 +137,20 @@ class VideoDatabase:
             )
         ''')
 
+        # Bookmarks/Timestamps for videos
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS bookmarks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                video_id TEXT,
+                timestamp INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                created_date TEXT,
+                color TEXT DEFAULT '#3B82F6',
+                FOREIGN KEY (video_id) REFERENCES videos(video_id) ON DELETE CASCADE
+            )
+        ''')
+
         conn.commit()
         conn.close()
 
@@ -782,3 +796,86 @@ class VideoDatabase:
         conn.close()
 
         return videos
+
+    # Bookmark operations
+    def add_bookmark(self, bookmark_data: Dict[str, Any]) -> int:
+        """Add a bookmark/timestamp to a video"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        bookmark_data['created_date'] = datetime.now().isoformat()
+
+        cursor.execute('''
+            INSERT INTO bookmarks (
+                video_id, timestamp, title, description, created_date, color
+            ) VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            bookmark_data.get('video_id'),
+            bookmark_data.get('timestamp'),
+            bookmark_data.get('title'),
+            bookmark_data.get('description'),
+            bookmark_data.get('created_date'),
+            bookmark_data.get('color', '#3B82F6')
+        ))
+
+        conn.commit()
+        bookmark_id = cursor.lastrowid
+        conn.close()
+
+        return bookmark_id
+
+    def get_bookmarks(self, video_id: str) -> List[Dict]:
+        """Get all bookmarks for a video ordered by timestamp"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT * FROM bookmarks
+            WHERE video_id = ?
+            ORDER BY timestamp ASC
+        ''', (video_id,))
+
+        bookmarks = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return bookmarks
+
+    def get_bookmark(self, bookmark_id: int) -> Optional[Dict]:
+        """Get a single bookmark by ID"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT * FROM bookmarks WHERE id = ?', (bookmark_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        return dict(row) if row else None
+
+    def update_bookmark(self, bookmark_id: int, updates: Dict[str, Any]) -> bool:
+        """Update bookmark information"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        set_clause = ', '.join([f'{key} = ?' for key in updates.keys()])
+        values = list(updates.values()) + [bookmark_id]
+
+        cursor.execute(f'UPDATE bookmarks SET {set_clause} WHERE id = ?', values)
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+
+        return affected > 0
+
+    def delete_bookmark(self, bookmark_id: int) -> bool:
+        """Delete a bookmark"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM bookmarks WHERE id = ?', (bookmark_id,))
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+
+        return affected > 0

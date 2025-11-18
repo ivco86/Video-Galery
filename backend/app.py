@@ -666,6 +666,75 @@ def save_video_progress(video_id):
     return jsonify({'success': True, 'history_id': history_id})
 
 
+# ========== BOOKMARK ENDPOINTS ==========
+
+@app.route('/api/videos/<video_id>/bookmarks', methods=['GET'])
+def get_video_bookmarks(video_id):
+    """Get all bookmarks for a video"""
+    bookmarks = db.get_bookmarks(video_id)
+    return jsonify(bookmarks)
+
+
+@app.route('/api/videos/<video_id>/bookmarks', methods=['POST'])
+def add_video_bookmark(video_id):
+    """Add a bookmark to a video"""
+    data = request.json
+
+    # Validate required fields
+    if not data.get('timestamp') and data.get('timestamp') != 0:
+        return jsonify({'error': 'timestamp required'}), 400
+
+    if not data.get('title'):
+        return jsonify({'error': 'title required'}), 400
+
+    bookmark_data = {
+        'video_id': video_id,
+        'timestamp': data.get('timestamp'),
+        'title': data.get('title'),
+        'description': data.get('description', ''),
+        'color': data.get('color', '#3B82F6')
+    }
+
+    bookmark_id = db.add_bookmark(bookmark_data)
+
+    return jsonify({'success': True, 'bookmark_id': bookmark_id})
+
+
+@app.route('/api/bookmarks/<int:bookmark_id>', methods=['GET'])
+def get_bookmark(bookmark_id):
+    """Get a specific bookmark"""
+    bookmark = db.get_bookmark(bookmark_id)
+
+    if bookmark:
+        return jsonify(bookmark)
+    else:
+        return jsonify({'error': 'Bookmark not found'}), 404
+
+
+@app.route('/api/bookmarks/<int:bookmark_id>', methods=['PUT'])
+def update_bookmark(bookmark_id):
+    """Update a bookmark"""
+    updates = request.json
+
+    success = db.update_bookmark(bookmark_id, updates)
+
+    if success:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': 'Bookmark not found'}), 404
+
+
+@app.route('/api/bookmarks/<int:bookmark_id>', methods=['DELETE'])
+def delete_bookmark(bookmark_id):
+    """Delete a bookmark"""
+    success = db.delete_bookmark(bookmark_id)
+
+    if success:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': 'Bookmark not found'}), 404
+
+
 # ========== ERROR HANDLERS ==========
 
 @app.errorhandler(404)
