@@ -5,11 +5,25 @@ class VideoGallery {
     constructor() {
         this.videos = [];
         this.boards = [];
+        this.playlists = [];
         this.currentFilter = 'all';
         this.currentBoard = null;
+        this.currentPlaylist = null;
         this.currentVideo = null;
         this.selectedBoardColor = '#3B82F6';
         this.selectedBoardIcon = '📁';
+        this.selectedPlaylistColor = '#3B82F6';
+        this.selectedPlaylistIcon = '▶️';
+
+        // Playlist player state
+        this.playlistPlayerActive = false;
+        this.currentPlaylistVideos = [];
+        this.currentPlaylistIndex = 0;
+        this.playlistSettings = {
+            autoPlay: true,
+            shuffle: false,
+            repeat: 'none' // 'none', 'all', 'one'
+        };
 
         this.init();
     }
@@ -18,6 +32,7 @@ class VideoGallery {
         this.setupEventListeners();
         await this.loadVideos();
         await this.loadBoards();
+        await this.loadPlaylists();
         this.updateStats();
     }
 
@@ -84,6 +99,70 @@ class VideoGallery {
         const subtitleSearch = document.getElementById('subtitleSearch');
         if (subtitleSearch) {
             subtitleSearch.addEventListener('input', (e) => this.searchSubtitles(e.target.value));
+        }
+
+        // Playlists
+        document.getElementById('createPlaylistBtn').addEventListener('click', () => this.openCreatePlaylistModal());
+        document.getElementById('createPlaylistSubmitBtn').addEventListener('click', () => this.createPlaylist());
+
+        // Playlist customization
+        document.querySelectorAll('.color-picker-playlist .color-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.color-picker-playlist .color-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                this.selectedPlaylistColor = e.target.dataset.color;
+            });
+        });
+
+        document.querySelectorAll('.icon-picker-playlist .icon-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.icon-picker-playlist .icon-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                this.selectedPlaylistIcon = e.target.dataset.icon;
+            });
+        });
+
+        // Playlist video actions
+        const watchLaterBtn = document.getElementById('watchLaterBtn');
+        if (watchLaterBtn) {
+            watchLaterBtn.addEventListener('click', () => this.addToWatchLater());
+        }
+
+        const addToPlaylistBtn = document.getElementById('addToPlaylistBtn');
+        if (addToPlaylistBtn) {
+            addToPlaylistBtn.addEventListener('click', () => this.openAddToPlaylistModal());
+        }
+
+        // Playlist player controls
+        const playlistPrevBtn = document.getElementById('playlistPrevBtn');
+        if (playlistPrevBtn) {
+            playlistPrevBtn.addEventListener('click', () => this.playlistPrevious());
+        }
+
+        const playlistNextBtn = document.getElementById('playlistNextBtn');
+        if (playlistNextBtn) {
+            playlistNextBtn.addEventListener('click', () => this.playlistNext());
+        }
+
+        const playlistShuffleBtn = document.getElementById('playlistShuffleBtn');
+        if (playlistShuffleBtn) {
+            playlistShuffleBtn.addEventListener('click', () => this.togglePlaylistShuffle());
+        }
+
+        const playlistRepeatBtn = document.getElementById('playlistRepeatBtn');
+        if (playlistRepeatBtn) {
+            playlistRepeatBtn.addEventListener('click', () => this.cyclePlaylistRepeat());
+        }
+
+        const playlistAutoPlayBtn = document.getElementById('playlistAutoPlayBtn');
+        if (playlistAutoPlayBtn) {
+            playlistAutoPlayBtn.addEventListener('click', () => this.togglePlaylistAutoPlay());
+        }
+
+        // Playlist video player events
+        const playlistVideoPlayer = document.getElementById('playlistVideoPlayer');
+        if (playlistVideoPlayer) {
+            playlistVideoPlayer.addEventListener('ended', () => this.onPlaylistVideoEnded());
         }
     }
 
@@ -614,6 +693,394 @@ class VideoGallery {
     closeCreateBoardModal() {
         document.getElementById('createBoardModal').style.display = 'none';
     }
+
+    // ========== PLAYLIST METHODS ==========
+
+    async loadPlaylists() {
+        try {
+            this.playlists = await this.apiCall('/playlists');
+            this.renderPlaylists();
+        } catch (error) {
+            console.error('Error loading playlists:', error);
+        }
+    }
+
+    renderPlaylists() {
+        const playlistsList = document.getElementById('playlistsList');
+        playlistsList.innerHTML = '';
+
+        this.playlists.forEach(playlist => {
+            const item = document.createElement('li');
+            item.className = 'playlist-item';
+            item.dataset.playlistId = playlist.id;
+
+            const color = playlist.color || '#3B82F6';
+            const icon = playlist.icon || '▶️';
+
+            item.innerHTML = `
+                <span class="playlist-icon" style="background: ${color}">${icon}</span>
+                <span class="playlist-name">${this.escapeHtml(playlist.name)}</span>
+                <span class="playlist-count">${playlist.video_count || 0}</span>
+            `;
+
+            item.addEventListener('click', () => this.openPlaylistPlayer(playlist.id));
+
+            playlistsList.appendChild(item);
+        });
+    }
+
+    async createPlaylist() {
+        const name = document.getElementById('playlistNameInput').value.trim();
+        const description = document.getElementById('playlistDescriptionInput').value.trim();
+        const autoPlay = document.getElementById('playlistAutoPlay').checked;
+        const shuffle = document.getElementById('playlistShuffle').checked;
+        const repeatMode = document.getElementById('playlistRepeatMode').value;
+
+        if (!name) {
+            this.showToast('Please enter a playlist name', 'error');
+            return;
+        }
+
+        try {
+            await this.apiCall('/playlists', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name,
+                    description,
+                    auto_play: autoPlay,
+                    shuffle,
+                    repeat_mode: repeatMode,
+                    color: this.selectedPlaylistColor,
+                    icon: this.selectedPlaylistIcon
+                })
+            });
+
+            this.showToast('Playlist created successfully', 'success');
+            this.closeCreatePlaylistModal();
+            await this.loadPlaylists();
+        } catch (error) {
+            console.error('Error creating playlist:', error);
+        }
+    }
+
+    openCreatePlaylistModal() {
+        document.getElementById('createPlaylistModal').style.display = 'flex';
+        document.getElementById('playlistNameInput').value = '';
+        document.getElementById('playlistDescriptionInput').value = '';
+        document.getElementById('playlistAutoPlay').checked = true;
+        document.getElementById('playlistShuffle').checked = false;
+        document.getElementById('playlistRepeatMode').value = 'none';
+
+        // Reset to defaults
+        this.selectedPlaylistColor = '#3B82F6';
+        this.selectedPlaylistIcon = '▶️';
+
+        document.querySelectorAll('.color-picker-playlist .color-btn')[0].classList.add('active');
+        document.querySelectorAll('.icon-picker-playlist .icon-btn')[0].classList.add('active');
+    }
+
+    closeCreatePlaylistModal() {
+        document.getElementById('createPlaylistModal').style.display = 'none';
+    }
+
+    async addToWatchLater() {
+        if (!this.currentVideo) return;
+
+        try {
+            await this.apiCall('/playlists/watch-later/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ video_id: this.currentVideo.video_id })
+            });
+
+            this.showToast('Added to Watch Later', 'success');
+        } catch (error) {
+            if (error.message.includes('Failed to add')) {
+                this.showToast('Video already in Watch Later', 'warning');
+            } else {
+                console.error('Error adding to Watch Later:', error);
+            }
+        }
+    }
+
+    async openAddToPlaylistModal() {
+        if (!this.currentVideo) return;
+
+        document.getElementById('addToPlaylistModal').style.display = 'flex';
+
+        // Load playlists for selection
+        const selectionList = document.getElementById('playlistsSelectionList');
+        selectionList.innerHTML = '';
+
+        this.playlists.forEach(playlist => {
+            if (playlist.is_watch_later) return; // Skip Watch Later
+
+            const item = document.createElement('div');
+            item.className = 'playlist-selection-item';
+            item.innerHTML = `
+                <span style="background: ${playlist.color}">${playlist.icon}</span>
+                <span>${this.escapeHtml(playlist.name)}</span>
+                <span class="playlist-video-count">${playlist.video_count || 0} videos</span>
+            `;
+
+            item.addEventListener('click', async () => {
+                await this.addVideoToPlaylist(playlist.id, this.currentVideo.video_id);
+                this.closeAddToPlaylistModal();
+            });
+
+            selectionList.appendChild(item);
+        });
+    }
+
+    closeAddToPlaylistModal() {
+        document.getElementById('addToPlaylistModal').style.display = 'none';
+    }
+
+    async addVideoToPlaylist(playlistId, videoId) {
+        try {
+            await this.apiCall(`/playlists/${playlistId}/videos`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ video_id: videoId })
+            });
+
+            this.showToast('Added to playlist', 'success');
+            await this.loadPlaylists(); // Refresh counts
+        } catch (error) {
+            console.error('Error adding video to playlist:', error);
+            this.showToast('Failed to add to playlist', 'error');
+        }
+    }
+
+    async openPlaylistPlayer(playlistId) {
+        try {
+            const playlist = await this.apiCall(`/playlists/${playlistId}`);
+
+            if (!playlist.videos || playlist.videos.length === 0) {
+                this.showToast('Playlist is empty', 'warning');
+                return;
+            }
+
+            this.currentPlaylist = playlist;
+            this.currentPlaylistVideos = playlist.videos;
+            this.currentPlaylistIndex = 0;
+
+            // Set playlist settings
+            this.playlistSettings = {
+                autoPlay: playlist.auto_play,
+                shuffle: playlist.shuffle,
+                repeat: playlist.repeat_mode
+            };
+
+            // Shuffle if enabled
+            if (this.playlistSettings.shuffle) {
+                this.shufflePlaylistVideos();
+            }
+
+            // Update UI
+            document.getElementById('playlistPlayerTitle').textContent = playlist.name;
+            this.updatePlaylistControls();
+
+            // Play first video
+            this.playlistPlayerActive = true;
+            this.playPlaylistVideo(0);
+
+            // Show modal
+            document.getElementById('playlistPlayerModal').style.display = 'flex';
+        } catch (error) {
+            console.error('Error opening playlist:', error);
+        }
+    }
+
+    playPlaylistVideo(index) {
+        if (index < 0 || index >= this.currentPlaylistVideos.length) return;
+
+        this.currentPlaylistIndex = index;
+        const video = this.currentPlaylistVideos[index];
+
+        const videoPlayer = document.getElementById('playlistVideoPlayer');
+        const youtubePlayer = document.getElementById('playlistYoutubePlayer');
+        const youtubeIframe = document.getElementById('playlistYoutubeIframe');
+
+        // Update position indicator
+        document.getElementById('playlistPosition').textContent =
+            `${index + 1} / ${this.currentPlaylistVideos.length}`;
+
+        // Load video
+        if (video.source === 'youtube') {
+            videoPlayer.style.display = 'none';
+            youtubePlayer.style.display = 'block';
+            youtubeIframe.src = `https://www.youtube.com/embed/${video.video_id}?autoplay=1`;
+        } else {
+            youtubePlayer.style.display = 'none';
+            videoPlayer.style.display = 'block';
+            videoPlayer.src = `/api/videos/${video.video_id}/stream`;
+            videoPlayer.load();
+            videoPlayer.play();
+        }
+
+        // Update queue
+        this.renderPlaylistQueue();
+    }
+
+    renderPlaylistQueue() {
+        const queueList = document.getElementById('playlistQueueList');
+        queueList.innerHTML = '';
+
+        this.currentPlaylistVideos.forEach((video, index) => {
+            const item = document.createElement('div');
+            item.className = 'playlist-queue-item';
+            if (index === this.currentPlaylistIndex) {
+                item.classList.add('active');
+            }
+
+            item.innerHTML = `
+                <span class="queue-position">${index + 1}</span>
+                <img src="${video.thumbnail_url}" alt="${video.title}">
+                <div class="queue-item-info">
+                    <div class="queue-item-title">${this.escapeHtml(video.title)}</div>
+                    <div class="queue-item-duration">${this.formatDuration(video.duration)}</div>
+                </div>
+            `;
+
+            item.addEventListener('click', () => this.playPlaylistVideo(index));
+
+            queueList.appendChild(item);
+        });
+
+        // Scroll to active item
+        const activeItem = queueList.querySelector('.active');
+        if (activeItem) {
+            activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+
+    playlistNext() {
+        let nextIndex = this.currentPlaylistIndex + 1;
+
+        if (nextIndex >= this.currentPlaylistVideos.length) {
+            if (this.playlistSettings.repeat === 'all') {
+                nextIndex = 0;
+            } else {
+                this.showToast('End of playlist', 'info');
+                return;
+            }
+        }
+
+        this.playPlaylistVideo(nextIndex);
+    }
+
+    playlistPrevious() {
+        let prevIndex = this.currentPlaylistIndex - 1;
+
+        if (prevIndex < 0) {
+            if (this.playlistSettings.repeat === 'all') {
+                prevIndex = this.currentPlaylistVideos.length - 1;
+            } else {
+                this.showToast('Start of playlist', 'info');
+                return;
+            }
+        }
+
+        this.playPlaylistVideo(prevIndex);
+    }
+
+    onPlaylistVideoEnded() {
+        if (!this.playlistPlayerActive) return;
+
+        if (this.playlistSettings.repeat === 'one') {
+            // Replay current video
+            this.playPlaylistVideo(this.currentPlaylistIndex);
+        } else if (this.playlistSettings.autoPlay) {
+            // Play next video
+            this.playlistNext();
+        }
+    }
+
+    togglePlaylistShuffle() {
+        this.playlistSettings.shuffle = !this.playlistSettings.shuffle;
+
+        const btn = document.getElementById('playlistShuffleBtn');
+        btn.classList.toggle('active', this.playlistSettings.shuffle);
+
+        if (this.playlistSettings.shuffle) {
+            this.shufflePlaylistVideos();
+            this.showToast('Shuffle enabled', 'info');
+        } else {
+            // Restore original order
+            this.currentPlaylistVideos = [...this.currentPlaylist.videos];
+            this.showToast('Shuffle disabled', 'info');
+        }
+
+        this.renderPlaylistQueue();
+    }
+
+    shufflePlaylistVideos() {
+        const currentVideo = this.currentPlaylistVideos[this.currentPlaylistIndex];
+
+        // Fisher-Yates shuffle
+        for (let i = this.currentPlaylistVideos.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [this.currentPlaylistVideos[i], this.currentPlaylistVideos[j]] =
+                [this.currentPlaylistVideos[j], this.currentPlaylistVideos[i]];
+        }
+
+        // Find new index of current video
+        this.currentPlaylistIndex = this.currentPlaylistVideos.findIndex(
+            v => v.video_id === currentVideo.video_id
+        );
+    }
+
+    cyclePlaylistRepeat() {
+        const modes = ['none', 'all', 'one'];
+        const currentIndex = modes.indexOf(this.playlistSettings.repeat);
+        const nextIndex = (currentIndex + 1) % modes.length;
+
+        this.playlistSettings.repeat = modes[nextIndex];
+
+        const btn = document.getElementById('playlistRepeatBtn');
+        const icons = { 'none': '🔁', 'all': '🔁', 'one': '🔂' };
+
+        btn.textContent = icons[this.playlistSettings.repeat];
+        btn.classList.toggle('active', this.playlistSettings.repeat !== 'none');
+
+        const labels = { 'none': 'Repeat off', 'all': 'Repeat all', 'one': 'Repeat one' };
+        this.showToast(labels[this.playlistSettings.repeat], 'info');
+    }
+
+    togglePlaylistAutoPlay() {
+        this.playlistSettings.autoPlay = !this.playlistSettings.autoPlay;
+
+        const btn = document.getElementById('playlistAutoPlayBtn');
+        btn.classList.toggle('active', this.playlistSettings.autoPlay);
+
+        this.showToast(
+            this.playlistSettings.autoPlay ? 'Auto-play enabled' : 'Auto-play disabled',
+            'info'
+        );
+    }
+
+    updatePlaylistControls() {
+        document.getElementById('playlistShuffleBtn').classList.toggle('active', this.playlistSettings.shuffle);
+        document.getElementById('playlistRepeatBtn').classList.toggle('active', this.playlistSettings.repeat !== 'none');
+        document.getElementById('playlistAutoPlayBtn').classList.toggle('active', this.playlistSettings.autoPlay);
+
+        const repeatBtn = document.getElementById('playlistRepeatBtn');
+        const icons = { 'none': '🔁', 'all': '🔁', 'one': '🔂' };
+        repeatBtn.textContent = icons[this.playlistSettings.repeat];
+    }
+
+    closePlaylistPlayerModal() {
+        this.playlistPlayerActive = false;
+        document.getElementById('playlistPlayerModal').style.display = 'none';
+
+        const videoPlayer = document.getElementById('playlistVideoPlayer');
+        const youtubeIframe = document.getElementById('playlistYoutubeIframe');
+
+        videoPlayer.pause();
+        youtubeIframe.src = '';
+    }
 }
 
 // Modal close functions (global)
@@ -634,6 +1101,20 @@ function closeImportModal() {
 
 function closeCreateBoardModal() {
     document.getElementById('createBoardModal').style.display = 'none';
+}
+
+function closeCreatePlaylistModal() {
+    document.getElementById('createPlaylistModal').style.display = 'none';
+}
+
+function closeAddToPlaylistModal() {
+    document.getElementById('addToPlaylistModal').style.display = 'none';
+}
+
+function closePlaylistPlayerModal() {
+    if (window.app) {
+        window.app.closePlaylistPlayerModal();
+    }
 }
 
 // Initialize app when DOM is ready
