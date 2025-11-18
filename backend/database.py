@@ -94,6 +94,49 @@ class VideoDatabase:
             )
         ''')
 
+        # Playlists table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS playlists (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT,
+                created_date TEXT,
+                updated_date TEXT,
+                thumbnail_video_id TEXT,
+                is_watch_later BOOLEAN DEFAULT 0,
+                auto_play BOOLEAN DEFAULT 1,
+                shuffle BOOLEAN DEFAULT 0,
+                repeat_mode TEXT DEFAULT 'none',
+                color TEXT,
+                icon TEXT
+            )
+        ''')
+
+        # Playlist-Video mapping with order
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS playlist_videos (
+                playlist_id INTEGER,
+                video_id TEXT,
+                position INTEGER,
+                added_date TEXT,
+                PRIMARY KEY (playlist_id, video_id),
+                FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
+                FOREIGN KEY (video_id) REFERENCES videos(video_id) ON DELETE CASCADE
+            )
+        ''')
+
+        # Watch history for resume playback
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS watch_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                video_id TEXT,
+                watch_date TEXT,
+                progress INTEGER DEFAULT 0,
+                completed BOOLEAN DEFAULT 0,
+                FOREIGN KEY (video_id) REFERENCES videos(video_id)
+            )
+        ''')
+
         conn.commit()
         conn.close()
 
@@ -445,3 +488,297 @@ class VideoDatabase:
         conn.close()
 
         return subscriptions
+
+    # Playlist operations
+    def create_playlist(self, playlist_data: Dict[str, Any]) -> int:
+        """Create a new playlist"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        now = datetime.now().isoformat()
+        playlist_data['created_date'] = now
+        playlist_data['updated_date'] = now
+
+        cursor.execute('''
+            INSERT INTO playlists (
+                name, description, created_date, updated_date,
+                is_watch_later, auto_play, shuffle, repeat_mode, color, icon
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            playlist_data.get('name'),
+            playlist_data.get('description'),
+            playlist_data.get('created_date'),
+            playlist_data.get('updated_date'),
+            playlist_data.get('is_watch_later', False),
+            playlist_data.get('auto_play', True),
+            playlist_data.get('shuffle', False),
+            playlist_data.get('repeat_mode', 'none'),
+            playlist_data.get('color', '#3B82F6'),
+            playlist_data.get('icon', '▶️')
+        ))
+
+        conn.commit()
+        playlist_id = cursor.lastrowid
+        conn.close()
+
+        return playlist_id
+
+    def get_playlists(self) -> List[Dict]:
+        """Get all playlists with video count"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT p.*, COUNT(pv.video_id) as video_count
+            FROM playlists p
+            LEFT JOIN playlist_videos pv ON p.id = pv.playlist_id
+            GROUP BY p.id
+            ORDER BY p.created_date DESC
+        ''')
+
+        playlists = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return playlists
+
+    def get_playlist(self, playlist_id: int) -> Optional[Dict]:
+        """Get a single playlist"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT * FROM playlists WHERE id = ?', (playlist_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        return dict(row) if row else None
+
+    def update_playlist(self, playlist_id: int, updates: Dict[str, Any]) -> bool:
+        """Update playlist information"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        updates['updated_date'] = datetime.now().isoformat()
+
+        set_clause = ', '.join([f'{key} = ?' for key in updates.keys()])
+        values = list(updates.values()) + [playlist_id]
+
+        cursor.execute(f'UPDATE playlists SET {set_clause} WHERE id = ?', values)
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+
+        return affected > 0
+
+    def delete_playlist(self, playlist_id: int) -> bool:
+        """Delete a playlist"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM playlists WHERE id = ?', (playlist_id,))
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+
+        return affected > 0
+
+    def add_video_to_playlist(self, playlist_id: int, video_id: str, position: Optional[int] = None) -> bool:
+        """Add a video to a playlist"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        # Get current max position if not specified
+        if position is None:
+            cursor.execute('''
+                SELECT MAX(position) as max_pos FROM playlist_videos
+                WHERE playlist_id = ?
+            ''', (playlist_id,))
+            result = cursor.fetchone()
+            position = (result[0] or 0) + 1
+
+        try:
+            cursor.execute('''
+                INSERT INTO playlist_videos (playlist_id, video_id, position, added_date)
+                VALUES (?, ?, ?, ?)
+            ''', (playlist_id, video_id, position, datetime.now().isoformat()))
+
+            # Update playlist updated_date
+            cursor.execute('''
+                UPDATE playlists SET updated_date = ? WHERE id = ?
+            ''', (datetime.now().isoformat(), playlist_id))
+
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+        finally:
+            conn.close()
+
+    def remove_video_from_playlist(self, playlist_id: int, video_id: str) -> bool:
+        """Remove a video from a playlist"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            DELETE FROM playlist_videos
+            WHERE playlist_id = ? AND video_id = ?
+        ''', (playlist_id, video_id))
+
+        # Update playlist updated_date
+        cursor.execute('''
+            UPDATE playlists SET updated_date = ? WHERE id = ?
+        ''', (datetime.now().isoformat(), playlist_id))
+
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+
+        return affected > 0
+
+    def get_playlist_videos(self, playlist_id: int) -> List[Dict]:
+        """Get all videos in a playlist in order"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT v.*, pv.position, pv.added_date as added_to_playlist
+            FROM videos v
+            JOIN playlist_videos pv ON v.video_id = pv.video_id
+            WHERE pv.playlist_id = ?
+            ORDER BY pv.position ASC
+        ''', (playlist_id,))
+
+        videos = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        # Parse JSON fields
+        for video in videos:
+            if video.get('tags'):
+                try:
+                    video['tags'] = json.loads(video['tags'])
+                except:
+                    video['tags'] = []
+            if video.get('ai_tags'):
+                try:
+                    video['ai_tags'] = json.loads(video['ai_tags'])
+                except:
+                    video['ai_tags'] = []
+
+        return videos
+
+    def reorder_playlist_videos(self, playlist_id: int, video_orders: List[Dict[str, Any]]) -> bool:
+        """Reorder videos in a playlist"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            for item in video_orders:
+                cursor.execute('''
+                    UPDATE playlist_videos
+                    SET position = ?
+                    WHERE playlist_id = ? AND video_id = ?
+                ''', (item['position'], playlist_id, item['video_id']))
+
+            # Update playlist updated_date
+            cursor.execute('''
+                UPDATE playlists SET updated_date = ? WHERE id = ?
+            ''', (datetime.now().isoformat(), playlist_id))
+
+            conn.commit()
+            return True
+        except:
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+
+    def get_or_create_watch_later(self) -> int:
+        """Get or create the Watch Later playlist"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Check if Watch Later exists
+        cursor.execute('SELECT id FROM playlists WHERE is_watch_later = 1')
+        result = cursor.fetchone()
+
+        if result:
+            playlist_id = result['id']
+        else:
+            # Create Watch Later playlist
+            now = datetime.now().isoformat()
+            cursor.execute('''
+                INSERT INTO playlists (
+                    name, description, created_date, updated_date,
+                    is_watch_later, auto_play, color, icon
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                'Watch Later',
+                'Videos to watch later',
+                now,
+                now,
+                True,
+                True,
+                '#F59E0B',
+                '🕐'
+            ))
+            conn.commit()
+            playlist_id = cursor.lastrowid
+
+        conn.close()
+        return playlist_id
+
+    # Watch history operations
+    def add_watch_history(self, video_id: str, progress: int = 0, completed: bool = False) -> int:
+        """Add or update watch history"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            INSERT INTO watch_history (video_id, watch_date, progress, completed)
+            VALUES (?, ?, ?, ?)
+        ''', (video_id, datetime.now().isoformat(), progress, completed))
+
+        conn.commit()
+        history_id = cursor.lastrowid
+        conn.close()
+
+        return history_id
+
+    def get_watch_progress(self, video_id: str) -> Optional[int]:
+        """Get last watch progress for a video"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT progress FROM watch_history
+            WHERE video_id = ?
+            ORDER BY watch_date DESC
+            LIMIT 1
+        ''', (video_id,))
+
+        result = cursor.fetchone()
+        conn.close()
+
+        return result[0] if result else None
+
+    def get_recently_watched(self, limit: int = 20) -> List[Dict]:
+        """Get recently watched videos"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT v.*, wh.watch_date, wh.progress, wh.completed
+            FROM videos v
+            JOIN watch_history wh ON v.video_id = wh.video_id
+            ORDER BY wh.watch_date DESC
+            LIMIT ?
+        ''', (limit,))
+
+        videos = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return videos

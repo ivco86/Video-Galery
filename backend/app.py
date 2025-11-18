@@ -505,6 +505,167 @@ def ai_status():
     })
 
 
+# ========== PLAYLIST ENDPOINTS ==========
+
+@app.route('/api/playlists', methods=['GET'])
+def get_playlists():
+    """Get all playlists"""
+    playlists = db.get_playlists()
+    return jsonify(playlists)
+
+
+@app.route('/api/playlists', methods=['POST'])
+def create_playlist():
+    """Create a new playlist"""
+    playlist_data = request.json
+
+    if not playlist_data.get('name'):
+        return jsonify({'error': 'Playlist name required'}), 400
+
+    playlist_id = db.create_playlist(playlist_data)
+    return jsonify({'success': True, 'playlist_id': playlist_id})
+
+
+@app.route('/api/playlists/<int:playlist_id>', methods=['GET'])
+def get_playlist(playlist_id):
+    """Get a specific playlist with its videos"""
+    playlist = db.get_playlist(playlist_id)
+
+    if not playlist:
+        return jsonify({'error': 'Playlist not found'}), 404
+
+    videos = db.get_playlist_videos(playlist_id)
+    playlist['videos'] = videos
+
+    return jsonify(playlist)
+
+
+@app.route('/api/playlists/<int:playlist_id>', methods=['PUT'])
+def update_playlist(playlist_id):
+    """Update playlist settings"""
+    updates = request.json
+
+    success = db.update_playlist(playlist_id, updates)
+
+    if success:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': 'Playlist not found'}), 404
+
+
+@app.route('/api/playlists/<int:playlist_id>', methods=['DELETE'])
+def delete_playlist(playlist_id):
+    """Delete a playlist"""
+    success = db.delete_playlist(playlist_id)
+
+    if success:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': 'Playlist not found'}), 404
+
+
+@app.route('/api/playlists/<int:playlist_id>/videos', methods=['POST'])
+def add_video_to_playlist(playlist_id):
+    """Add a video to a playlist"""
+    data = request.json
+    video_id = data.get('video_id')
+    position = data.get('position')
+
+    if not video_id:
+        return jsonify({'error': 'video_id required'}), 400
+
+    success = db.add_video_to_playlist(playlist_id, video_id, position)
+
+    if success:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': 'Failed to add video to playlist'}), 400
+
+
+@app.route('/api/playlists/<int:playlist_id>/videos/<video_id>', methods=['DELETE'])
+def remove_video_from_playlist(playlist_id, video_id):
+    """Remove a video from a playlist"""
+    success = db.remove_video_from_playlist(playlist_id, video_id)
+
+    if success:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': 'Video not in playlist'}), 404
+
+
+@app.route('/api/playlists/<int:playlist_id>/reorder', methods=['POST'])
+def reorder_playlist(playlist_id):
+    """Reorder videos in a playlist"""
+    video_orders = request.json.get('videos', [])
+
+    success = db.reorder_playlist_videos(playlist_id, video_orders)
+
+    if success:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': 'Failed to reorder playlist'}), 500
+
+
+@app.route('/api/playlists/watch-later', methods=['GET'])
+def get_watch_later():
+    """Get or create Watch Later playlist"""
+    playlist_id = db.get_or_create_watch_later()
+    playlist = db.get_playlist(playlist_id)
+    videos = db.get_playlist_videos(playlist_id)
+    playlist['videos'] = videos
+
+    return jsonify(playlist)
+
+
+@app.route('/api/playlists/watch-later/add', methods=['POST'])
+def add_to_watch_later():
+    """Add video to Watch Later"""
+    data = request.json
+    video_id = data.get('video_id')
+
+    if not video_id:
+        return jsonify({'error': 'video_id required'}), 400
+
+    playlist_id = db.get_or_create_watch_later()
+    success = db.add_video_to_playlist(playlist_id, video_id)
+
+    if success:
+        return jsonify({'success': True, 'playlist_id': playlist_id})
+    else:
+        return jsonify({'error': 'Failed to add to Watch Later'}), 400
+
+
+# ========== WATCH HISTORY ENDPOINTS ==========
+
+@app.route('/api/history/recently-watched', methods=['GET'])
+def get_recently_watched():
+    """Get recently watched videos"""
+    limit = request.args.get('limit', 20, type=int)
+    videos = db.get_recently_watched(limit=limit)
+
+    return jsonify(videos)
+
+
+@app.route('/api/history/progress/<video_id>', methods=['GET'])
+def get_video_progress(video_id):
+    """Get watch progress for a video"""
+    progress = db.get_watch_progress(video_id)
+
+    return jsonify({'video_id': video_id, 'progress': progress})
+
+
+@app.route('/api/history/progress/<video_id>', methods=['POST'])
+def save_video_progress(video_id):
+    """Save watch progress for a video"""
+    data = request.json
+    progress = data.get('progress', 0)
+    completed = data.get('completed', False)
+
+    history_id = db.add_watch_history(video_id, progress, completed)
+
+    return jsonify({'success': True, 'history_id': history_id})
+
+
 # ========== ERROR HANDLERS ==========
 
 @app.errorhandler(404)
